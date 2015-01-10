@@ -2,7 +2,6 @@
 
 using namespace bot;
 using namespace std;
-using namespace luabridge;
 
 void EventBus::fire(const string &name, const Value &val)
 {
@@ -12,12 +11,13 @@ void EventBus::fire(const string &name, const Value &val)
             h(val);
         }
     }
+    /*
     auto it2 = lua_handlers.find(name);
     if (it2 != lua_handlers.end()) {
         for (auto &h : it2->second) {
-            h(val);
+            h();
         }
-    }
+        }*/
 }
 
 void EventBus::hook(string &&name, function<void (const Value &val)> &&fn)
@@ -30,7 +30,7 @@ void EventBus::hook(string &&name, function<void (const Value &val)> &&fn)
 
 void EventBus::openlib(lua_State *L)
 {
-    getGlobalNamespace(L)
+/*    getGlobalNamespace(L)
         .beginNamespace("bot")
           .beginClass<EventBus>("event")
             .addFunction("fire", &EventBus::fire)
@@ -44,13 +44,14 @@ void EventBus::openlib(lua_State *L)
             .addProperty("table", &EventBus::Value::table)
             .addFunction("get", &EventBus::Value::get)
           .endClass()
-        .endNamespace();
+          .endNamespace();*/
 }
-
-void EventBus::hookLua(const string &name, LuaRef fn)
+/*
+void EventBus::hookLua(const string &name, lua::Value fn)
 {
     auto res = lua_handlers.emplace(piecewise_construct,
                                     forward_as_tuple(name),
                                     forward_as_tuple());
     res.first->second.emplace_back(fn);
 }
+*/

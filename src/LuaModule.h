@@ -3,7 +3,6 @@
 
 #include <string>
 #include <lua.hpp>
-#include "LuaBridge/LuaBridge.h"
 
 namespace bot {
 

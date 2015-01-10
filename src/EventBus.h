@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 #include <lua.hpp>
-#include "LuaBridge/LuaBridge.h"
+#include <assert.h>
 
 namespace bot {
 
@@ -188,10 +188,10 @@ public:
     void openlib(lua_State *L);
 
 private:
-    void hookLua(const std::string &name, luabridge::LuaRef fn);
+    //void hookLua(const std::string &name, lua::Value fn);
 
     std::unordered_map<std::string, std::vector<std::function<void (const Value &val)>>> handlers;
-    std::unordered_map<std::string, std::vector<luabridge::LuaRef>> lua_handlers;
+    //std::unordered_map<std::string, std::vector<lua::Value>> lua_handlers;
 };
 
 }
