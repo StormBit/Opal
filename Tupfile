@@ -1,0 +1,4 @@
+include_rules
+
+: src/*.o |> !ld |> bot
+: test/*.o |> !ld -lgtest -lgtest_main |> runtests

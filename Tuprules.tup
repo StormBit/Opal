@@ -1,0 +1,51 @@
+.gitignore
+
+ifdef CXX
+CXX = @(CXX)
+else
+CXX = clang++
+endif
+
+ifdef CC
+CC = @(CC)
+else
+CC = clang
+endif
+
+ifdef LD
+LD = @(LD)
+else
+LD = $(CXX)
+endif
+
+ifdef AR
+AR = @(AR)
+else
+AR = ar rcs
+endif
+
+ifdef PKG_CONFIG
+PKG_CONFIG = @(PKG_CONFIG)
+else
+PKG_CONFIG = pkg-config
+endif
+
+TOP = $(TUP_CWD)
+
+CCFLAGS = -g -Wall -Wextra -pedantic -Wimplicit-fallthrough -fPIC \
+        -I$(TOP)/src @(CCFLAGS)
+
+CXXFLAGS = -std=c++11 @(CXXFLAGS)
+
+ifeq ($(CXX),clang++)
+  CXXFLAGS += -fcolor-diagnostics
+endif
+
+CFLAGS = -std=c99 @(CFLAGS)
+
+LDFLAGS = -g -pthread -luv -lyaml-cpp @(LDFLAGS)
+
+!cxx = |> ^o C++ %f^ $(CXX) $(CXXFLAGS) $(CCFLAGS) -c %f -o %o |> %B.o | $(TOP)/<objs>
+!cc = |> ^o C %f^ $(CC) $(CFLAGS) $(CCFLAGS) -c %f -o %o |> %B.o | $(TOP)/<objs>
+!ar = |> ^o AR %o^ $(AR) %o %f |>
+!ld = |> ^o LINK %o^ $(LD) %f $(LDFLAGS) -o %o |>
