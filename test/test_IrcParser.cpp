@@ -2,7 +2,7 @@
 #ifndef TEST
 #define TEST
 #endif
-#include "main.cpp"
+#include "IrcParser.cpp"
 
 TEST(IrcParser, BasicMessages)
 {
