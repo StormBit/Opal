@@ -6,6 +6,8 @@
 #include <cstring>
 
 #include "IrcParser.h"
+#include "LuaModule.h"
+#include "EventBus.h"
 
 using namespace std;
 using namespace bot;
@@ -69,15 +71,16 @@ struct IrcServer {
     unsigned write_num = 0;
     uv_write_t write_req;
     bool write_active = false;
-    string nickname, user, realname;
+    string address, nickname, user, realname;
     vector<string> channels_to_join;
     IrcParser parser;
+    EventBus &bus;
     char prefix;
 
-    IrcServer(string nickname, string user, string realname, vector<string> &&channels,
-              char prefix = '+')
-        : nickname(nickname), user(user), realname(realname), channels_to_join(channels),
-          prefix(prefix) {}
+    IrcServer(string address, string nickname, string user, string realname, vector<string> &&channels,
+              EventBus &bus, char prefix = '+')
+        : address(address), nickname(nickname), user(user), realname(realname), channels_to_join(channels),
+          bus(bus), prefix(prefix) {}
 
     int start(uv_loop_t *loop, uv_tcp_t *tcp) {
         this->loop = loop;
@@ -162,6 +165,7 @@ struct IrcServer {
     void handleMessage(const IrcMessage &msg) {
         printf("<<< %s\n", to_string(msg).c_str());
         if (msg.command == "001") {
+            bus.fire("server-connect", EventBus::Value(address));
             for (auto &c : channels_to_join) {
                 writef("JOIN :%s\r\n", c.c_str());
             }
@@ -199,6 +203,14 @@ struct IrcServer {
     }
 
     void handleCommand(const string &nick, const string &chan, const string &cmd, const string &args) {
+        std::unique_ptr<EventBus::Value::Table> table(new EventBus::Value::Table {
+                {"server", address},
+                {"nick", nick},
+                {"channel", chan},
+                {"command", cmd},
+                {"args", args}
+            });
+        bus.fire("command", std::move(table));
         if (cmd == "echo") {
             writef("PRIVMSG %s :%s\r\n", chan.c_str(), args.c_str());
             return;
@@ -269,13 +281,19 @@ int main(int argc, char **argv)
     uv_loop_t loop;
     uv_loop_init(&loop);
 
+    EventBus bus;
+    LuaModule test("test");
+    test.load();
+    test.openlib(bus);
+
     string name = "StormBot";
+    string addr = "irc.stormbit.net";
     vector<string> chans = {
         "#test"
     };
-    IrcServer irc(name, name, name, move(chans));
+    IrcServer irc(addr, name, name, name, move(chans), bus);
     TcpConnection tcp(irc);
-    DnsResolver resolver("irc.stormbit.net", "6667", tcp);
+    DnsResolver resolver(addr.c_str(), "6667", tcp);
 
     resolver.start(&loop);
 
