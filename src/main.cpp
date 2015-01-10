@@ -39,15 +39,26 @@ struct IrcMessage {
 
 string to_string(const IrcMessage &msg)
 {
-    auto acc = msg.nickname + "!" + msg.user + "@" + msg.host + " " + msg.command;
+    string acc;
+    if (!msg.nickname.empty()) {
+        acc += ":" + msg.nickname;
+        if (!msg.user.empty()) {
+            acc += "!" + msg.user;
+        }
+        if (!msg.host.empty()) {
+            acc += "@" + msg.host;
+        }
+        acc += " ";
+    }
+    acc += msg.command;
     if (!msg.params.empty()) {
         for (unsigned i = 0; i < msg.params.size() - 1; i++) {
-            acc += msg.params[i] + " ";
+            acc += " " + msg.params[i];
         }
         if (msg.trailing) {
-            acc += ":" + msg.params.back();
+            acc += " :" + msg.params.back();
         } else {
-            acc += msg.params.back();
+            acc += " " + msg.params.back();
         }
     }
     return acc;
@@ -198,9 +209,13 @@ struct IrcServer {
     bool write_active = false;
     string nickname, user, realname;
     vector<string> channels_to_join;
+    IrcParser parser;
+    char prefix;
 
-    IrcServer(string nickname, string user, string realname, vector<string> &&channels)
-        : nickname(nickname), user(user), realname(realname), channels_to_join(channels) {}
+    IrcServer(string nickname, string user, string realname, vector<string> &&channels,
+              char prefix = '+')
+        : nickname(nickname), user(user), realname(realname), channels_to_join(channels),
+          prefix(prefix) {}
 
     int start(uv_loop_t *loop, uv_tcp_t *tcp) {
         this->loop = loop;
@@ -210,8 +225,8 @@ struct IrcServer {
         if ((res = uv_read_start(reinterpret_cast<uv_stream_t*>(tcp), &IrcServer::alloc, &IrcServer::on_read))) {
             return res;
         }
-        writef("NICK %s\r\n", nickname.c_str());
-        writef("USER %s 0 0 %s\r\n", user.c_str(), realname.c_str());
+        writef("NICK :%s\r\n", nickname.c_str());
+        writef("USER %s 0 0 :%s\r\n", user.c_str(), realname.c_str());
         return 0;
     }
 
@@ -223,22 +238,35 @@ struct IrcServer {
     }
 
     static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
-        (void)stream;
-        fwrite(buf->base, nread, 1, stdout);
+        IrcServer &self = *reinterpret_cast<IrcServer*>(stream->data);
+        if (nread < 0) {
+            printf("xxx uv read: %s\n", uv_strerror(nread));
+            return;
+        }
+        self.parser.push(string(buf->base, nread));
+        IrcMessage msg;
+        while (self.parser.run(msg)) {
+            self.handleMessage(msg);
+        }
     }
 
-    void write(std::string &&str) {
-        write_queue.emplace_back(str);
-        if (!write_active) {
+    void begin_write() {
+        if (!write_active && !write_queue.empty()) {
             vector<uv_buf_t> bufs;
             for (auto &str : write_queue) {
                 bufs.emplace_back(uv_buf_t { const_cast<char*>(str.c_str()), str.size() });
             }
+            write_num = write_queue.size();
             write_active = true;
             uv_write(&write_req, reinterpret_cast<uv_stream_t*>(tcp), bufs.data(), bufs.size(),
                      &IrcServer::on_write);
             write_req.data = this;
         }
+    }
+
+    void write(std::string &&str) {
+        write_queue.emplace_back(str);
+        begin_write();
     }
 
     void writef(const char *fmt, ...) __attribute((format(printf, 2, 3))) {
@@ -258,11 +286,61 @@ struct IrcServer {
     static void on_write(uv_write_t *req, int status) {
         IrcServer &self = *reinterpret_cast<IrcServer*>(req->data);
         if (status != 0) {
-            printf(">>> %s\n", uv_strerror(status));
+            printf("xxx %s\n", uv_strerror(status));
         } else {
-            self.write_queue.clear();
+            for (unsigned i = 0; i < self.write_num; i++) {
+                self.write_queue.pop_front();
+            }
+            self.write_num = 0;
         }
         self.write_active = false;
+        self.begin_write();
+    }
+
+    void handleMessage(const IrcMessage &msg) {
+        printf("<<< %s\n", to_string(msg).c_str());
+        if (msg.command == "001") {
+            for (auto &c : channels_to_join) {
+                writef("JOIN :%s\r\n", c.c_str());
+            }
+            return;
+        }
+        if (msg.command == "PING") {
+            string v;
+            for (unsigned i = 0; i < msg.params.size(); i++) {
+                v += msg.params[i] + " ";
+            }
+            v.pop_back();
+            writef("PONG :%s\r\n", v.c_str());
+            return;
+        }
+        if (msg.command == "PRIVMSG") {
+            if (msg.params.size() < 2) {
+                return;
+            }
+            if (nickname == msg.params[0]) {
+                handleCommand(msg.nickname, msg.nickname, msg.params[0], msg.params[1]);
+                return;
+            }
+            if (msg.params[1][0] == prefix) {
+                auto &args = msg.params[1];
+                size_t split = args.find(" ");
+                string tail;
+                if (split != string::npos) {
+                    tail = args.substr(split+1, string::npos);
+                }
+                string head = args.substr(1, split == string::npos? string::npos : split-1);
+                handleCommand(msg.nickname, msg.params[0], head, tail);
+                return;
+            }
+        }
+    }
+
+    void handleCommand(const string &nick, const string &chan, const string &cmd, const string &args) {
+        if (cmd == "echo") {
+            writef("PRIVMSG %s :%s\r\n", chan.c_str(), args.c_str());
+            return;
+        }
     }
 };
 
@@ -315,6 +393,11 @@ struct DnsResolver {
         self.tcp.start(self.loop, res->ai_addr);
     }
 };
+
+void print(const string &str)
+{
+    printf("%s\n", str.c_str());
+}
 
 #ifndef TEST
 int main(int argc, char **argv)
