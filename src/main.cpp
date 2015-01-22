@@ -296,7 +296,7 @@ int main(int argc, char **argv)
     TcpConnection tcp(irc);
     DnsResolver resolver(addr.c_str(), "6667", tcp);
 
-    //resolver.start(&loop);
+    resolver.start(&loop);
 
     uv_run(&loop, UV_RUN_DEFAULT);
 

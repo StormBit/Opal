@@ -22,7 +22,9 @@ public:
             Number,
             String,
             Bool,
-            Table
+            Table,
+            OwnedObject,
+            RefObject
         };
 
         struct hash {
@@ -30,6 +32,8 @@ public:
             size_t operator()(const Value &x) const {
                 size_t tag = type_(static_cast<unsigned>(x.type())), value = 0;
                 switch (x.type()) {
+                case Type::Nil:
+                    break;
                 case Type::Number:
                     value = std::hash<double>()(x.number());
                     break;
@@ -42,7 +46,9 @@ public:
                 case Type::Table:
                     assert(!"Table hashing NYI");
                     break;
-                default:
+                case Type::OwnedObject:
+                case Type::RefObject:
+                    value = x.object().hash();
                     break;
                 }
                 return tag ^ value;
@@ -60,10 +66,13 @@ public:
         Value(const std::string &str) : type_(Type::String), string_(str) {}
         Value(bool b) : type_(Type::Bool), bool_(b) {}
         Value(std::unique_ptr<Table> &&t) : type_(Type::Table), table_(std::move(t)) {}
+        Value(IObject &object) : type_(Type::RefObject), ref_object_(&object) {}
         Value(const Value &other)
             : type_(other.type_)
         {
             switch (type_) {
+            case Type::Nil:
+                break;
             case Type::Number:
                 new (&number_) double(other.number_);
                 break;
@@ -76,7 +85,11 @@ public:
             case Type::Table:
                 new (&table_) std::unique_ptr<Table>(new Table(*other.table_));
                 break;
-            default:
+            case Type::OwnedObject:
+                assert(!"Owned objects cannot be copied");
+                break;
+            case Type::RefObject:
+                new (&ref_object_) IObject*(other.ref_object_);
                 break;
             }
         }
@@ -84,6 +97,8 @@ public:
             : type_(other.type_)
         {
             switch (type_) {
+            case Type::Nil:
+                break;
             case Type::Number:
                 new (&number_) double(other.number_);
                 break;
@@ -96,7 +111,11 @@ public:
             case Type::Table:
                 new (&table_) std::unique_ptr<Table>(std::move(other.table_));
                 break;
-            default:
+            case Type::OwnedObject:
+                new (&owned_object_) std::unique_ptr<IObject>(std::move(other.owned_object_));
+                break;
+            case Type::RefObject:
+                new (&ref_object_) IObject*(other.ref_object_);
                 break;
             }
             new (&other) Value();
@@ -109,6 +128,9 @@ public:
                 break;
             case Type::Table:
                 table_.~unique_ptr();
+                break;
+            case Type::OwnedObject:
+                owned_object_.~unique_ptr();
                 break;
             default:
                 break;
@@ -138,6 +160,9 @@ public:
                 return bool_ == other.bool_;
             case Type::Table:
                 return table_ == other.table_;
+            case Type::OwnedObject:
+            case Type::RefObject:
+                return object().hash() == other.object().hash();
             }
         }
 
@@ -149,6 +174,9 @@ public:
             const char *const types[] = {
                 "nil", "number", "string", "bool", "table"
             };
+            if (type_ == Type::OwnedObject || type_ == Type::RefObject) {
+                return object().tname();
+            }
             return types[static_cast<unsigned>(type_)];
         }
 
@@ -177,11 +205,27 @@ public:
             return *table_;
         }
 
+        const IObject &object() const {
+            switch (type_) {
+            case Type::OwnedObject:
+                return *owned_object_;
+            case Type::RefObject:
+                return *ref_object_;
+            default:
+                assert(!"Not an object");
+            }
+        }
+
         const Value &get(const std::string &key) const {
             static Value nil;
             auto it = table().find(key);
             return it == table().end() ? nil : it->second;
         }
+
+        void wrap(lua_State *L) const;
+        static Value unwrap(lua_State *L);
+        std::string to_string(size_t indent = 0) const;
+        void print() const;
 
     private:
         const Type type_;
@@ -191,6 +235,8 @@ public:
             std::string string_;
             bool bool_;
             std::unique_ptr<Table> table_;
+            std::unique_ptr<IObject> owned_object_;
+            IObject *ref_object_;
         };
     };
 

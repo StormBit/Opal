@@ -3,22 +3,42 @@
 
 #include <utility>
 #include <typeinfo>
+#include <memory>
 #include <lua.hpp>
 
 namespace bot {
 
+class IObject {
+public:
+    virtual ~IObject();
+    virtual const char *tname() const = 0;
+    virtual size_t hash() const = 0;
+    virtual void meta(lua_State *L) const = 0;
+};
+
+template<class T>
+class ObjectMixins : public IObject {
+    
+};
+
 template<class T>
 class LuaWrap {
 public:
-    template<typename ...Args>
     static LuaWrap &create(lua_State *L, T &value)
     {
         return *new (lua_newuserdata(L, sizeof(LuaWrap))) LuaWrap(value);
     }
-    template<typename ...Args>
     static LuaWrap &create(lua_State *L, T &&value)
     {
         return *new (lua_newuserdata(L, sizeof(LuaWrap))) LuaWrap(std::move(value));
+    }
+    static LuaWrap &create(lua_State *L, IObject *object)
+    {
+        return *new (lua_newuserdata(L, sizeof(LuaWrap))) LuaWrap(object);
+    }
+    static LuaWrap &create(lua_State *L, std::unique_ptr<IObject> &&object)
+    {
+        return *new (lua_newuserdata(L, sizeof(LuaWrap))) LuaWrap(std::move(object));
     }
     template<typename ...Args>
     static LuaWrap &create(lua_State *L, Args &&...args)
@@ -40,6 +60,9 @@ public:
 private:
     LuaWrap(T &value) : value(&value), hash(typeid(T).hash_code()), owned(false) {}
     LuaWrap(T &&value) : value(new T(std::move(value))), hash(typeid(T).hash_code()), owned(true) {}
+    LuaWrap(IObject *object) : value(object), hash(object->hash()), owned(false) {}
+    LuaWrap(std::unique_ptr<IObject> &&object)
+        : value(object.release()), hash(value->hash()), owned(true) {}
     template<typename ...Args>
     LuaWrap(Args &&...args)
         : value(new T(std::forward(args)...)), hash(typeid(T).hash_code()), owned(true) {}
