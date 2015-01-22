@@ -285,6 +285,7 @@ int main(int argc, char **argv)
     LuaModule test("test");
     test.load();
     test.openlib(bus);
+    test.run();
 
     string name = "StormBot";
     string addr = "irc.stormbit.net";
@@ -295,7 +296,7 @@ int main(int argc, char **argv)
     TcpConnection tcp(irc);
     DnsResolver resolver(addr.c_str(), "6667", tcp);
 
-    resolver.start(&loop);
+    //resolver.start(&loop);
 
     uv_run(&loop, UV_RUN_DEFAULT);
 

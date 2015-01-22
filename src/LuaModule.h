@@ -11,6 +11,7 @@ public:
     LuaModule(std::string &&name) : name(name) {}
 
     void load();
+    void run();
     template<class T>
     void openlib(T &val) {
         val.openlib(L);
@@ -19,6 +20,7 @@ public:
 private:
     std::string name;
     lua_State *L = nullptr;
+    int chunk = 0;
 };
 
 }

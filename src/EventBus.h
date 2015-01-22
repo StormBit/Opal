@@ -8,6 +8,9 @@
 #include <lua.hpp>
 #include <assert.h>
 
+#include "LuaWrap.h"
+#include "LuaRef.h"
+
 namespace bot {
 
 class EventBus {
@@ -62,16 +65,16 @@ public:
         {
             switch (type_) {
             case Type::Number:
-                number_ = other.number_;
+                new (&number_) double(other.number_);
                 break;
             case Type::String:
-                string_ = other.string_;
+                new (&string_) std::string(other.string_);
                 break;
             case Type::Bool:
-                bool_ = other.bool_;
+                new (&bool_) bool(other.bool_);
                 break;
             case Type::Table:
-                table_ = std::unique_ptr<Table>(new Table(*other.table_));
+                new (&table_) std::unique_ptr<Table>(new Table(*other.table_));
                 break;
             default:
                 break;
@@ -82,16 +85,16 @@ public:
         {
             switch (type_) {
             case Type::Number:
-                number_ = other.number_;
+                new (&number_) double(other.number_);
                 break;
             case Type::String:
-                string_ = std::move(other.string_);
+                new (&string_) std::string(std::move(other.string_));
                 break;
             case Type::Bool:
-                bool_ = other.bool_;
+                new (&bool_) bool(other.bool_);
                 break;
             case Type::Table:
-                table_ = std::move(other.table_);
+                new (&table_) std::unique_ptr<Table>(std::move(other.table_));
                 break;
             default:
                 break;
@@ -110,6 +113,14 @@ public:
             default:
                 break;
             }
+        }
+
+        Value &operator=(const Value &other) {
+            this->~Value();
+            if (this != &other) {
+                new (this) Value(other);
+            }
+            return *this;
         }
 
         bool operator==(const Value &other) const {
@@ -186,12 +197,16 @@ public:
     void fire(const std::string &name, const Value &val);
     void hook(std::string &&name, std::function<void (const Value &val)> &&fn);
     void openlib(lua_State *L);
+    void print();
 
 private:
-    //void hookLua(const std::string &name, lua::Value fn);
+    LuaWrap<EventBus> &wrap(lua_State *L);
+    static int lua_hook(lua_State *L);
+    static int lua_fire(lua_State *L);
+    static int __index(lua_State *L);
 
     std::unordered_map<std::string, std::vector<std::function<void (const Value &val)>>> handlers;
-    //std::unordered_map<std::string, std::vector<lua::Value>> lua_handlers;
+    std::unordered_map<std::string, std::vector<LuaRef>> lua_handlers;
 };
 
 }
