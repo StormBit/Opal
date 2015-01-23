@@ -12,12 +12,14 @@
 
 namespace bot {
 
-class IrcServer : public ObjectMixins<IrcServer> {
+static const char IrcServerName[] = "IrcServer";
+
+class IrcServer : public ObjectMixins<IrcServer, IrcServerName> {
 public:
     IrcServer(std::string address, std::string nickname, std::string user, std::string realname,
               std::vector<std::string> &&channels, EventBus &bus, char prefix = '+')
-        : ObjectMixins<IrcServer>("IrcServer"), address(address), nickname(nickname), user(user),
-        realname(realname), channels_to_join(channels), bus(bus), prefix(prefix) {}
+        : address(address), nickname(nickname), user(user), realname(realname),
+          channels_to_join(channels), bus(bus), prefix(prefix) {}
 
     int start(uv_loop_t *loop, uv_tcp_t *tcp);
     void write(std::string &&str);

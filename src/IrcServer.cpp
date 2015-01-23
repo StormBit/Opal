@@ -173,7 +173,7 @@ int IrcServer::__index(lua_State *L)
 
 int IrcServer::lua_write(lua_State *L)
 {
-    IrcServer &self = unwrap(L, "IrcServer", 1);
+    IrcServer &self = unwrap(L, 1);
     size_t len = 0;
     const char *str = luaL_checklstring(L, 2, &len);
     if (len > strlen(str)) {

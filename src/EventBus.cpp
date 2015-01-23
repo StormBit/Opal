@@ -185,7 +185,7 @@ void EventBus::openlib(lua_State *L)
 
 int EventBus::lua_hook(lua_State *L)
 {
-    EventBus &bus = unwrap(L, "EventBus", 1);
+    EventBus &bus = unwrap(L, 1);
     const char *name = luaL_checkstring(L, 2);
     luaL_checktype(L, 3, LUA_TFUNCTION);
     if (lua_gettop(L) != 3) {
@@ -201,7 +201,7 @@ int EventBus::lua_hook(lua_State *L)
 
 int EventBus::lua_fire(lua_State *L)
 {
-    EventBus &bus = unwrap(L, "EventBus", 1);
+    EventBus &bus = unwrap(L, 1);
     const char *name = luaL_checkstring(L, 2);
     if (lua_gettop(L) != 3) {
         luaL_error(L, "Invalid number of parameters");

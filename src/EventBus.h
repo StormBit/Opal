@@ -13,7 +13,9 @@
 
 namespace bot {
 
-class EventBus : public ObjectMixins<EventBus> {
+static const char EventBusName[] = "EventBus";
+
+class EventBus : public ObjectMixins<EventBus, EventBusName> {
 public:
     class Value {
     public:
@@ -240,8 +242,6 @@ public:
             IObject *ref_object_;
         };
     };
-
-    EventBus() : ObjectMixins<EventBus>("EventBus") {}
 
     void fire(const std::string &name, const Value &val);
     void hook(std::string &&name, std::function<void (const Value &val)> &&fn);

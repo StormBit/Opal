@@ -82,10 +82,9 @@ private:
     bool owned;
 };
 
-template<class T>
+template<class T, const char *tname_>
 class ObjectMixins : public IObject {
 public:
-    ObjectMixins(const char *tname) : tname_(tname) {}
     ~ObjectMixins() {}
 
     const char *tname() const {
@@ -105,17 +104,15 @@ public:
 
     virtual int __index(lua_State *L) {(void)L; return 0;}
 
-    static T &unwrap(lua_State *L, const char *tname, int index = -1) {
-        return reinterpret_cast<LuaWrap<T>*>(luaL_checkudata(L, index, tname))->get();
+    static T &unwrap(lua_State *L, int index = -1) {
+        return reinterpret_cast<LuaWrap<T>*>(luaL_checkudata(L, index, tname_))->get();
     }
 
 private:
     static int raw__index(lua_State *L) {
-        T &self = reinterpret_cast<LuaWrap<T>*>(lua_touserdata(L, 1))->get();
+        T &self = reinterpret_cast<LuaWrap<T>*>(luaL_checkudata(L, 1, tname_))->get();
         return self.__index(L);
     }
-
-    const char *tname_;
 };
 
 LuaWrap<IObject> &wrap_object(IObject *ptr, lua_State *L);
