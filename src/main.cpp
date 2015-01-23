@@ -82,7 +82,7 @@ int main(int argc, char **argv)
     test.openlib(bus);
     test.run();
 
-    string name = "StormBot";
+    string name = "Opal";
     string addr = "irc.stormbit.net";
     vector<string> chans = {
         "#test"
