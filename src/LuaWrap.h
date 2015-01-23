@@ -5,6 +5,7 @@
 #include <typeinfo>
 #include <memory>
 #include <lua.hpp>
+#include <cassert>
 
 namespace bot {
 
@@ -14,11 +15,6 @@ public:
     virtual const char *tname() const = 0;
     virtual size_t hash() const = 0;
     virtual void meta(lua_State *L) const = 0;
-};
-
-template<class T>
-class ObjectMixins : public IObject {
-    
 };
 
 template<class T>
@@ -85,6 +81,44 @@ private:
     size_t hash;
     bool owned;
 };
+
+template<class T>
+class ObjectMixins : public IObject {
+public:
+    ObjectMixins(const char *tname) : tname_(tname) {}
+    ~ObjectMixins() {}
+
+    const char *tname() const {
+        return tname_;
+    }
+
+    size_t hash() const {
+        return typeid(T).hash_code();
+    }
+
+    void meta(lua_State *L) const {
+        lua_pushstring(L, "__index");
+        lua_pushcfunction(L, &ObjectMixins::raw__index);
+        lua_settable(L, -3);
+        LuaWrap<T>::add_gc(L);
+    }
+
+    virtual int __index(lua_State *L) {(void)L; return 0;}
+
+    static T &unwrap(lua_State *L, const char *tname, int index = -1) {
+        return reinterpret_cast<LuaWrap<T>*>(luaL_checkudata(L, index, tname))->get();
+    }
+
+private:
+    static int raw__index(lua_State *L) {
+        T &self = reinterpret_cast<LuaWrap<T>*>(lua_touserdata(L, 1))->get();
+        return self.__index(L);
+    }
+
+    const char *tname_;
+};
+
+LuaWrap<IObject> &wrap_object(IObject *ptr, lua_State *L);
 
 }
 

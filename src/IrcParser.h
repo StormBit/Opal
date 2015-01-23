@@ -4,6 +4,7 @@
 #include <string>
 #include <deque>
 #include <vector>
+#include <uv.h>
 
 namespace bot {
 
@@ -40,6 +41,63 @@ private:
     std::deque<std::string> queue;
     unsigned str_pos = 0;
 };
+
+}
+
+namespace std {
+
+inline
+std::string to_string(struct addrinfo *addr)
+{
+    char buf[4096];
+    void *a = NULL;
+    unsigned short port = 0;
+    struct sockaddr_in *sa;
+    struct sockaddr_in6 *sa6;
+    switch (addr->ai_family) {
+    case AF_INET:
+        sa = reinterpret_cast<struct sockaddr_in*>(addr->ai_addr);
+        a = &sa->sin_addr;
+        port = sa->sin_port;
+        break;
+    case AF_INET6:
+        sa6 = reinterpret_cast<struct sockaddr_in6*>(addr->ai_addr);
+        a = &sa6->sin6_addr;
+        port = sa6->sin6_port;
+        break;
+    default:
+        break;
+    }
+    return string(inet_ntop(addr->ai_family, a, buf, 4096)) + ":" + to_string(ntohs(port));
+}
+
+inline
+std::string to_string(const bot::IrcMessage &msg)
+{
+    string acc;
+    if (!msg.nickname.empty()) {
+        acc += ":" + msg.nickname;
+        if (!msg.user.empty()) {
+            acc += "!" + msg.user;
+        }
+        if (!msg.host.empty()) {
+            acc += "@" + msg.host;
+        }
+        acc += " ";
+    }
+    acc += msg.command;
+    if (!msg.params.empty()) {
+        for (unsigned i = 0; i < msg.params.size() - 1; i++) {
+            acc += " " + msg.params[i];
+        }
+        if (msg.trailing) {
+            acc += " :" + msg.params.back();
+        } else {
+            acc += " " + msg.params.back();
+        }
+    }
+    return acc;
+}
 
 }
 

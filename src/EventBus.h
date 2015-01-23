@@ -13,7 +13,7 @@
 
 namespace bot {
 
-class EventBus {
+class EventBus : public ObjectMixins<EventBus> {
 public:
     class Value {
     public:
@@ -62,9 +62,10 @@ public:
 
         Value() : type_(Type::Nil) {}
         Value(double num) : type_(Type::Number), number_(num) {}
+        Value(const char *str) : type_(Type::String), string_(str) {}
         Value(std::string &&str) : type_(Type::String), string_(str) {}
         Value(const std::string &str) : type_(Type::String), string_(str) {}
-        Value(bool b) : type_(Type::Bool), bool_(b) {}
+        explicit Value(bool b) : type_(Type::Bool), bool_(b) {}
         Value(std::unique_ptr<Table> &&t) : type_(Type::Table), table_(std::move(t)) {}
         Value(IObject &object) : type_(Type::RefObject), ref_object_(&object) {}
         Value(const Value &other)
@@ -240,16 +241,18 @@ public:
         };
     };
 
+    EventBus() : ObjectMixins<EventBus>("EventBus") {}
+
     void fire(const std::string &name, const Value &val);
     void hook(std::string &&name, std::function<void (const Value &val)> &&fn);
     void openlib(lua_State *L);
     void print();
 
+    int __index(lua_State *L);
+
 private:
-    LuaWrap<EventBus> &wrap(lua_State *L);
     static int lua_hook(lua_State *L);
     static int lua_fire(lua_State *L);
-    static int __index(lua_State *L);
 
     std::unordered_map<std::string, std::vector<std::function<void (const Value &val)>>> handlers;
     std::unordered_map<std::string, std::vector<LuaRef>> lua_handlers;

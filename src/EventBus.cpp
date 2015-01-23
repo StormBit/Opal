@@ -35,10 +35,8 @@ void EventBus::Value::wrap(lua_State *L) const
     case Type::OwnedObject:
         assert(!"Cannot copy owned object");
     case Type::RefObject:
-        {
-            LuaWrap<IObject>::create(L, ref_object_);
-            break;
-        }
+        wrap_object(ref_object_, L);
+        break;
     }
 }
 
@@ -181,26 +179,13 @@ void EventBus::print()
 
 void EventBus::openlib(lua_State *L)
 {
-    wrap(L);
+    wrap_object(this, L);
     lua_setglobal(L, "eventbus");
-}
-
-LuaWrap<EventBus> &EventBus::wrap(lua_State *L)
-{
-    auto &w = LuaWrap<EventBus>::create(L, *this);
-    if (luaL_newmetatable(L, "EventBus")) {
-        lua_pushstring(L, "__index");
-        lua_pushcfunction(L, &EventBus::__index);
-        lua_settable(L, -3);
-        LuaWrap<EventBus>::add_gc(L);
-    }
-    lua_setmetatable(L, -2);
-    return w;
 }
 
 int EventBus::lua_hook(lua_State *L)
 {
-    EventBus &bus = reinterpret_cast<LuaWrap<EventBus>*>(luaL_checkudata(L, 1, "EventBus"))->get();
+    EventBus &bus = unwrap(L, "EventBus", 1);
     const char *name = luaL_checkstring(L, 2);
     luaL_checktype(L, 3, LUA_TFUNCTION);
     if (lua_gettop(L) != 3) {
@@ -216,7 +201,7 @@ int EventBus::lua_hook(lua_State *L)
 
 int EventBus::lua_fire(lua_State *L)
 {
-    EventBus &bus = reinterpret_cast<LuaWrap<EventBus>*>(luaL_checkudata(L, 1, "EventBus"))->get();
+    EventBus &bus = unwrap(L, "EventBus", 1);
     const char *name = luaL_checkstring(L, 2);
     if (lua_gettop(L) != 3) {
         luaL_error(L, "Invalid number of parameters");
