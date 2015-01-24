@@ -5,92 +5,44 @@
 using namespace std;
 using namespace bot;
 
-int IrcServer::start(uv_loop_t *loop, uv_tcp_t *tcp) {
-    this->loop = loop;
-    this->tcp = tcp;
-    tcp->data = this;
-    int res;
-    if ((res = uv_read_start(reinterpret_cast<uv_stream_t*>(tcp), &IrcServer::alloc, &IrcServer::on_read))) {
-        return res;
-    }
-    writef("NICK :%s\r\n", nickname.c_str());
-    writef("USER %s 0 0 :%s\r\n", user.c_str(), realname.c_str());
+int IrcServer::start(const char *host, const char *service, uv_loop_t *loop)
+{
+    return dns.start(host, service, loop);
+}
+
+int IrcServer::start(uv_loop_t *loop, uv_tcp_t *tcp_)
+{
+    (void)loop, (void)tcp_;
+    tcp.writef("NICK :%s\r\n", nickname.c_str());
+    tcp.writef("USER %s 0 0 :%s\r\n", user.c_str(), realname.c_str());
     return 0;
 }
 
-void IrcServer::alloc(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
-    (void)size;
-    IrcServer &self = *reinterpret_cast<IrcServer*>(handle->data);
-    buf->base = self.buffer;
-    buf->len = sizeof(self.buffer);
-}
-
-void IrcServer::on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
-    IrcServer &self = *reinterpret_cast<IrcServer*>(stream->data);
+void IrcServer::onRead(ssize_t nread, const uv_buf_t *buf)
+{
     if (nread < 0) {
         printf("xxx uv read: %s\n", uv_strerror(nread));
         return;
     }
-    self.parser.push(string(buf->base, nread));
+    parser.push(string(buf->base, nread));
     IrcMessage msg;
-    while (self.parser.run(msg)) {
-        self.handleMessage(msg);
+    while (parser.run(msg)) {
+        handleMessage(msg);
     }
 }
 
-void IrcServer::begin_write() {
-    if (!write_active && !write_queue.empty()) {
-        vector<uv_buf_t> bufs;
-        for (auto &str : write_queue) {
-            bufs.emplace_back(uv_buf_t { const_cast<char*>(str.c_str()), str.size() });
-        }
-        write_num = write_queue.size();
-        write_active = true;
-        uv_write(&write_req, reinterpret_cast<uv_stream_t*>(tcp), bufs.data(), bufs.size(),
-                 &IrcServer::on_write);
-        write_req.data = this;
-    }
+void IrcServer::onError(int status)
+{
+    printf("xxx: %s\n", uv_strerror(status));
 }
 
-void IrcServer::write(std::string &&str) {
-    write_queue.emplace_back(str);
-    begin_write();
-}
-
-void IrcServer::writef(const char *fmt, ...) {
-    va_list ap1, ap2;
-    va_start(ap1, fmt);
-    ssize_t len = vsnprintf(NULL, 0, fmt, ap1);
-    va_end(ap1);
-    assert(len >= 0);
-    char *buf = new char[len + 1];
-    va_start(ap2, fmt);
-    vsnprintf(buf, len+1, fmt, ap2);
-    va_end(ap2);
-    write(buf);
-    delete[] buf;
-}
-
-void IrcServer::on_write(uv_write_t *req, int status) {
-    IrcServer &self = *reinterpret_cast<IrcServer*>(req->data);
-    if (status != 0) {
-        printf("xxx %s\n", uv_strerror(status));
-    } else {
-        for (unsigned i = 0; i < self.write_num; i++) {
-            self.write_queue.pop_front();
-        }
-        self.write_num = 0;
-    }
-    self.write_active = false;
-    self.begin_write();
-}
-
-void IrcServer::handleMessage(const IrcMessage &msg) {
+void IrcServer::handleMessage(const IrcMessage &msg)
+{
     printf("<<< %s\n", to_string(msg).c_str());
     if (msg.command == "001") {
         bus.fire("server-connect", EventBus::Value(static_cast<IObject&>(*this)));
         for (auto &c : channels_to_join) {
-            writef("JOIN :%s\r\n", c.c_str());
+            tcp.writef("JOIN :%s\r\n", c.c_str());
         }
         return;
     }
@@ -100,7 +52,7 @@ void IrcServer::handleMessage(const IrcMessage &msg) {
             v += msg.params[i] + " ";
         }
         v.pop_back();
-        writef("PONG :%s\r\n", v.c_str());
+        tcp.writef("PONG :%s\r\n", v.c_str());
         return;
     }
     if (msg.command == "PRIVMSG") {
@@ -125,7 +77,8 @@ void IrcServer::handleMessage(const IrcMessage &msg) {
     }
 }
 
-void IrcServer::handleCommand(const string &nick, const string &chan, const string &cmd, const string &args) {
+void IrcServer::handleCommand(const string &nick, const string &chan, const string &cmd, const string &args)
+{
     std::unique_ptr<EventBus::Value::Table> table(new EventBus::Value::Table {
             {"server", static_cast<IObject&>(*this)},
             {"nick", nick},
@@ -135,7 +88,7 @@ void IrcServer::handleCommand(const string &nick, const string &chan, const stri
         });
     bus.fire("command", std::move(table));
     if (cmd == "echo") {
-        writef("PRIVMSG %s :%s\r\n", chan.c_str(), args.c_str());
+        tcp.writef("PRIVMSG %s :%s\r\n", chan.c_str(), args.c_str());
         return;
     }
 }
@@ -179,6 +132,6 @@ int IrcServer::lua_write(lua_State *L)
     if (len > strlen(str)) {
         luaL_error(L, "IRC messages cannot contain embedded zeros");
     }
-    self.write(str);
+    self.tcp.write(str);
     return 0;
 }

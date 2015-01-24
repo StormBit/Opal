@@ -9,6 +9,8 @@
 #include "LuaWrap.h"
 #include "IrcParser.h"
 #include "EventBus.h"
+#include "TcpConnection.h"
+#include "DnsResolver.h"
 
 namespace bot {
 
@@ -18,31 +20,23 @@ class IrcServer : public ObjectMixins<IrcServer, IrcServerName> {
 public:
     IrcServer(std::string address, std::string nickname, std::string user, std::string realname,
               std::vector<std::string> &&channels, EventBus &bus, char prefix = '+')
-        : address(address), nickname(nickname), user(user), realname(realname),
+        : tcp(*this), dns(tcp), address(address), nickname(nickname), user(user), realname(realname),
           channels_to_join(channels), bus(bus), prefix(prefix) {}
 
+    int start(const char *host, const char *service, uv_loop_t *loop);
     int start(uv_loop_t *loop, uv_tcp_t *tcp);
-    void write(std::string &&str);
-    void writef(const char *fmt, ...) __attribute((format(printf, 2, 3)));
 
+    void onRead(ssize_t nread, const uv_buf_t *buf);
+    void onError(int status);
     int __index(lua_State *L);
 
 private:
-    void begin_write();
     void handleMessage(const IrcMessage &msg);
     void handleCommand(const std::string &nick, const std::string &chan, const std::string &cmd, const std::string &args);
-    static void alloc(uv_handle_t *handle, size_t size, uv_buf_t *buf);
-    static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
-    static void on_write(uv_write_t *req, int status);
     static int lua_write(lua_State *L);
 
-    uv_tcp_t *tcp = nullptr;
-    uv_loop_t *loop = nullptr;
-    char buffer[65536] = "";
-    std::deque<std::string> write_queue;
-    unsigned write_num = 0;
-    uv_write_t write_req;
-    bool write_active = false;
+    TcpConnection<IrcServer> tcp;
+    DnsResolver<TcpConnection<IrcServer>> dns;
     std::string address, nickname, user, realname;
     std::vector<std::string> channels_to_join;
     IrcParser parser;

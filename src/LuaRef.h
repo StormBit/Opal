@@ -7,6 +7,7 @@ namespace bot {
 
 class LuaRef {
 public:
+    LuaRef() {}
     LuaRef(lua_State *L, int ref) : L(L), ref(ref) {}
 
     lua_State *getL() {
@@ -17,13 +18,13 @@ public:
         return LuaRef(L, luaL_ref(L, LUA_REGISTRYINDEX));
     }
 
-    void push() {
+    void push() const {
         lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
     }
 
 private:
-    lua_State *L;
-    int ref;
+    lua_State *L = nullptr;
+    int ref = LUA_NOREF;
 };
 
 }

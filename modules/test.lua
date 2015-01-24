@@ -12,3 +12,14 @@ function command(t)
    print("command", t.command)
 end
 eventbus:hook("command", command)
+
+local h = httprequest.new {
+   url = "http://httpbin.org/get",
+   method = "GET",
+   headers = {
+      ["User-Agent"] = "OpalIRC"
+   },
+   callback = function(r, s)
+      print(r, s)
+   end
+}
