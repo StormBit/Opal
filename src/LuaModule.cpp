@@ -79,6 +79,7 @@ void LuaModule::register_file(const std::string &file)
 {
     auto res = files.emplace(file, uv_fs_event_t());
     if (res.second) {
+        printf("Watch %s\n", file.c_str());
         uv_fs_event_init(loop, &res.first->second);
         uv_fs_event_start(&res.first->second, &LuaModule::event_cb, file.c_str(), 0);
         res.first->second.data = this;
@@ -90,14 +91,16 @@ int LuaModule::loader_wrapper(lua_State *L)
     auto &self = LuaModule::unwrap(L, lua_upvalueindex(1));
     const char *name = luaL_checkstring(L, 1);
 
+    int top = lua_gettop(L);
     lua_getglobal(L, "package");
     lua_pushstring(L, "path");
-    lua_rawget(L, -1);
+    lua_rawget(L, -2);
     size_t len;
     const char *path = luaL_checklstring(L, -1, &len);
     const char *tok_start = path, *tok_end = NULL, *question = NULL;
-    for (unsigned i = 0; i < len; i++) {
+    for (unsigned i = 0; i < len+1; i++) {
         switch (path[i]) {
+        case 0:
         case ';':
             {
                 tok_end = path + i;
@@ -108,9 +111,10 @@ int LuaModule::loader_wrapper(lua_State *L)
                 if (!question) {
                     luaL_error(L, "Invalid PATH: No ? in pattern");
                 }
-                npath += string(tok_start, question - tok_start - 1);
+                npath += string(tok_start, question - tok_start);
                 npath += name;
                 npath += string(question + 1, tok_end - question);
+                printf("%s\n", npath.c_str());
                 if (!access(npath.c_str(), F_OK)) {
                     self.register_file(npath);
                 }
@@ -125,7 +129,12 @@ int LuaModule::loader_wrapper(lua_State *L)
             continue;
         }
     }
-    return 0;
+    lua_pop(L, 2);
+    assert(top == lua_gettop(L));
+    self.old_loader.push();
+    lua_pushvalue(L, 1);
+    lua_call(L, 1, LUA_MULTRET);
+    return lua_gettop(L) - top;
 }
 
 void LuaModule::event_cb(uv_fs_event_t *handle, const char *filename,
