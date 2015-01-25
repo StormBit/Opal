@@ -38,7 +38,7 @@ public:
     http_method method = HTTP_GET;
     std::unordered_map<std::string, std::string> request_headers;
     std::unordered_map<std::string, std::string> response_headers;
-    std::function<void (bool, const char*, size_t)> response_callback;
+    std::function<void (int, const char*, size_t)> response_callback;
 
     int __index(lua_State *L);
     static void openlib(lua_State *L);

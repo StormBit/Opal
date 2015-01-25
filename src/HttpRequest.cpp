@@ -11,12 +11,12 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
 {
     if (http_parser_parse_url(addr, strlen(addr), false, &url)) {
         const char *err = "Parsing URL failed";
-        response_callback(false, err, strlen(err));
+        response_callback(UV_UNKNOWN, err, strlen(err));
         return false;
     }
     if (!(url.field_set & (1 << UF_HOST))) {
         const char *err = "URL is missing host component";
-        response_callback(false, err, strlen(err));
+        response_callback(UV_UNKNOWN, err, strlen(err));
         return false;
     }
     if (!(url.field_set & (1 << UF_PATH))) {
@@ -35,7 +35,7 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
     }
     if (int res = dns.start(host.c_str(), service.c_str(), loop)) {
         const char *err = http_errno_description(static_cast<enum http_errno>(res));
-        response_callback(false, err, strlen(err));
+        response_callback(res, err, strlen(err));
         return false;
     }
     return true;
@@ -63,7 +63,7 @@ void HttpRequest::onRead(size_t nread, const uv_buf_t *buf)
 void HttpRequest::onError(int status)
 {
     const char *error(uv_strerror(status));
-    response_callback(false, error, strlen(error));
+    response_callback(status, error, strlen(error));
 }
 
 int HttpRequest::__index(lua_State *L)
@@ -111,7 +111,7 @@ int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t le
 int HttpRequest::on_body(http_parser *parser, const char *buf, size_t length)
 {
     auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
-    self.response_callback(true, buf, length);
+    self.response_callback(0, buf, length);
     return 0;
 }
 
@@ -159,15 +159,34 @@ int HttpRequest::lua_new(lua_State *L)
                 req->request_headers.emplace(key, value);
             }
         }
+        if (!strcmp(key, "unbuffered")) {
+            lua_pushvalue(L, -1);
+            auto ref = LuaRef::create(L);
+            req->response_callback = [=](int r, const char *k, size_t l) {
+                ref.push();
+                lua_pushboolean(L, r != 0);
+                lua_pushlstring(L, k, l);
+                lua_pushboolean(L, http_body_is_final(&req->parser));
+                if (lua_pcall(L, 2, 0, 0)) {
+                    printf("%s\n", lua_tostring(L, -1));
+                }
+            };
+        }
         if (!strcmp(key, "callback")) {
             lua_pushvalue(L, -1);
             auto ref = LuaRef::create(L);
-            req->response_callback = [=](bool r, const char *k, size_t l) {
-                ref.push();
-                lua_pushboolean(L, r);
-                lua_pushlstring(L, k, l);
-                if (lua_pcall(L, 2, 0, 0)) {
-                    printf("%s\n", lua_tostring(L, -1));
+            string buffer;
+            req->response_callback = [=](int r, const char *k, size_t l) mutable {
+                if (!r) {
+                    buffer.append(k,l);
+                }
+                if (!r && http_body_is_final(&req->parser)) {
+                    ref.push();
+                    lua_pushboolean(L, r == 0);
+                    lua_pushlstring(L, buffer.data(), buffer.size());
+                    if (lua_pcall(L, 2, 0, 0)) {
+                        printf("%s\n", lua_tostring(L, -1));
+                    }
                 }
             };
         }
