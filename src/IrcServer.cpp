@@ -59,6 +59,13 @@ void IrcServer::handleMessage(const IrcMessage &msg)
         if (msg.params.size() < 2) {
             return;
         }
+        std::unique_ptr<EventBus::Value::Table> table(new EventBus::Value::Table {
+                {"server", static_cast<IObject&>(*this)},
+                {"nick", msg.nickname},
+                {"channel", msg.params[0]},
+                {"message", msg.params[1]}
+            });
+        bus.fire("message", std::move(table));
         if (nickname == msg.params[0]) {
             handleCommand(msg.nickname, msg.nickname, msg.params[0], msg.params[1]);
             return;
