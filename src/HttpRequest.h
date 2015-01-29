@@ -31,6 +31,7 @@ public:
 
     bool begin(const char *url, uv_loop_t *loop);
     int start(uv_loop_t *loop, uv_tcp_t *addr);
+    void cancel();
 
     void onRead(size_t nread, const uv_buf_t *buf);
     void onError(int status);
@@ -49,6 +50,7 @@ private:
     static int on_header_value(http_parser *parser, const char *buf, size_t length);
     static int on_body(http_parser *parser, const char *buf, size_t length);
     static int lua_new(lua_State *L);
+    static int lua_cancel(lua_State *L);
 
     http_parser_url url;
     http_parser parser;

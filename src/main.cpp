@@ -30,11 +30,15 @@ int main(int argc, char **argv)
     uv_loop_init(&loop);
 
     EventBus bus;
-    LuaModule test("test");
+    LuaModule test("test"), link("link");
     test.load(&loop);
     test.openlib(bus);
     HttpRequest::openlib(test.getL());
     test.run();
+    link.load(&loop);
+    link.openlib(bus);
+    HttpRequest::openlib(link.getL());
+    link.run();
 
     string name = "Opal";
     string addr = "irc.stormbit.net";

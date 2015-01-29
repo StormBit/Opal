@@ -10,6 +10,12 @@ public:
     LuaRef() {}
     LuaRef(lua_State *L, int ref) : L(L), ref(ref) {}
 
+    void unref() {
+        if (L) {
+            luaL_unref(L, LUA_REGISTRYINDEX, ref);
+        }
+    }
+
     lua_State *getL() {
         return L;
     }

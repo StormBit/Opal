@@ -28,7 +28,11 @@ struct DnsResolver {
     static void callback(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
         (void)status;
         DnsResolver &self = *reinterpret_cast<DnsResolver*>(req);
-        self.ready.start(self.loop, res->ai_addr);
+        if (status) {
+            self.ready.onError(status);
+        } else {
+            self.ready.start(self.loop, res->ai_addr);
+        }
     }
 };
 

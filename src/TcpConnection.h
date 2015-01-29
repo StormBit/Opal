@@ -4,6 +4,7 @@
 #include <deque>
 #include <string>
 #include <vector>
+#include <functional>
 #include <uv.h>
 #include <cassert>
 
@@ -28,6 +29,13 @@ public:
         return 0;
     }
 
+    void shutdown(std::function<void (int)> &&callback) {
+        uv_read_stop(reinterpret_cast<uv_stream_t*>(&tcp));
+        uv_shutdown(&shutdown_req, reinterpret_cast<uv_stream_t*>(&tcp), &TcpConnection::on_shutdown);
+        shutdown_req.data = this;
+        shutdown_cb = std::move(callback);
+    }
+
     void write(std::string &&str) {
         write_queue.emplace_back(str);
         begin_write();
@@ -45,6 +53,10 @@ public:
         va_end(ap2);
         write(buf);
         delete[] buf;
+    }
+
+    void onError(int status) {
+        ready.onError(status);
     }
 
 private:
@@ -107,10 +119,17 @@ private:
         self.begin_write();
     }
 
+    static void on_shutdown(uv_shutdown_t *req, int status) {
+        TcpConnection &self = *reinterpret_cast<TcpConnection*>(req->data);
+        self.shutdown_cb(status);
+    }
+
     char buffer[65536] = "";
     std::deque<std::string> write_queue;
     unsigned write_num = 0;
     uv_write_t write_req;
+    uv_shutdown_t shutdown_req;
+    std::function<void (int)> shutdown_cb;
     bool write_active = false;
     uv_tcp_t tcp;
     uv_connect_t req;

@@ -55,6 +55,14 @@ int HttpRequest::start(uv_loop_t *loop, uv_tcp_t *tcp)
     return 0;
 }
 
+void HttpRequest::cancel()
+{
+    tcpcon.shutdown([=](int status) {
+            (void)status;
+            ref.unref();
+        });
+}
+
 void HttpRequest::onRead(size_t nread, const uv_buf_t *buf)
 {
     http_parser_execute(&parser, &settings, buf->base, nread);
@@ -72,8 +80,12 @@ int HttpRequest::__index(lua_State *L)
     const char *key = luaL_checkstring(L, 2);
 
     const char *method = http_method_str(self.method);
-    if (!strcmp(key, method)) {
+    if (!strcmp(key, "method")) {
         lua_pushstring(L, method);
+        return 1;
+    }
+    if (!strcmp(key, "cancel")) {
+        lua_pushcfunction(L, &HttpRequest::lua_cancel);
         return 1;
     }
     return 0;
@@ -164,11 +176,12 @@ int HttpRequest::lua_new(lua_State *L)
             auto ref = LuaRef::create(L);
             req->response_callback = [=](int r, const char *k, size_t l) {
                 ref.push();
-                lua_pushboolean(L, r != 0);
+                wrap_object(req, L);
+                lua_pushboolean(L, r == 0);
                 lua_pushlstring(L, k, l);
                 lua_pushboolean(L, http_body_is_final(&req->parser));
-                if (lua_pcall(L, 2, 0, 0)) {
-                    printf("%s\n", lua_tostring(L, -1));
+                if (lua_pcall(L, 4, 0, 0)) {
+                    printf("http request callback: %s\n", lua_tostring(L, -1));
                 }
             };
         }
@@ -182,10 +195,11 @@ int HttpRequest::lua_new(lua_State *L)
                 }
                 if (!r && http_body_is_final(&req->parser)) {
                     ref.push();
+                    wrap_object(req, L);
                     lua_pushboolean(L, r == 0);
                     lua_pushlstring(L, buffer.data(), buffer.size());
-                    if (lua_pcall(L, 2, 0, 0)) {
-                        printf("%s\n", lua_tostring(L, -1));
+                    if (lua_pcall(L, 3, 0, 0)) {
+                        printf("http request callback: %s\n", lua_tostring(L, -1));
                     }
                 }
             };
@@ -203,4 +217,11 @@ int HttpRequest::lua_new(lua_State *L)
     lua_pushvalue(L, -1);
     req->ref = LuaRef::create(L);
     return 1;
+}
+
+int HttpRequest::lua_cancel(lua_State *L)
+{
+    auto &self = unwrap(L);
+    self.cancel();
+    return 0;
 }
