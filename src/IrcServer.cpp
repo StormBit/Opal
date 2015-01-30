@@ -7,33 +7,19 @@ using namespace bot;
 
 int IrcServer::start(const char *host, const char *service, uv_loop_t *loop)
 {
+    tcp.connected_promise.then([=](uv_tcp_t*) {
+            tcp.writef("NICK :%s\r\n", nickname.c_str());
+            tcp.writef("USER %s 0 0 :%s\r\n", user.c_str(), realname.c_str());
+        });
+    tcp.read_promise.then([=](uv_buf_t buf) {
+            parser.push(string(buf.base, buf.len));
+            IrcMessage msg;
+            while (parser.run(msg)) {
+                handleMessage(msg);
+            }
+        });
+    tcp.start(loop, dns.addr_promise);
     return dns.start(host, service, loop);
-}
-
-int IrcServer::start(uv_loop_t *loop, uv_tcp_t *tcp_)
-{
-    (void)loop, (void)tcp_;
-    tcp.writef("NICK :%s\r\n", nickname.c_str());
-    tcp.writef("USER %s 0 0 :%s\r\n", user.c_str(), realname.c_str());
-    return 0;
-}
-
-void IrcServer::onRead(ssize_t nread, const uv_buf_t *buf)
-{
-    if (nread < 0) {
-        printf("xxx uv read: %s\n", uv_strerror(nread));
-        return;
-    }
-    parser.push(string(buf->base, nread));
-    IrcMessage msg;
-    while (parser.run(msg)) {
-        handleMessage(msg);
-    }
-}
-
-void IrcServer::onError(int status)
-{
-    printf("xxx: %s\n", uv_strerror(status));
 }
 
 void IrcServer::handleMessage(const IrcMessage &msg)

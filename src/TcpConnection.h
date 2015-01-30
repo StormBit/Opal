@@ -8,12 +8,21 @@
 #include <uv.h>
 #include <cassert>
 
+#include "Promise.h"
+#include "Result.h"
+
 namespace bot {
 
-template<class T>
 class TcpConnection {
 public:
-    TcpConnection(T &ready) : ready(ready) {}
+    void start(uv_loop_t *loop, Promise<struct sockaddr *> &promise) {
+        promise.then([=](struct sockaddr* addr) {
+                int res = start(loop, addr);
+                if (res) {
+                    onError(res);
+                }
+            });
+    }
 
     int start(uv_loop_t *loop, struct sockaddr *addr) {
         this->loop = loop;
@@ -56,8 +65,12 @@ public:
     }
 
     void onError(int status) {
-        ready.onError(status);
+        error_promise.run(status);
     }
+
+    Promise<int> error_promise;
+    Promise<uv_tcp_t*> connected_promise;
+    Promise<uv_buf_t> read_promise;
 
 private:
     void begin_write() {
@@ -77,16 +90,16 @@ private:
     static void callback(uv_connect_t *req, int status) {
         TcpConnection &self = *reinterpret_cast<TcpConnection*>(req->data);
         if (status) {
-            self.ready.onError(status);
+            self.onError(status);
             return;
         }
         int res;
         if ((res = uv_read_start(reinterpret_cast<uv_stream_t*>(&self.tcp),
                                  &TcpConnection::alloc, &TcpConnection::on_read))) {
-            self.ready.onError(res);
+            self.onError(status);
             return;
         }
-        self.ready.start(self.loop, &self.tcp);
+        self.connected_promise.run(&self.tcp);
     }
 
     static void alloc(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
@@ -99,16 +112,16 @@ private:
     static void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         TcpConnection &self = *reinterpret_cast<TcpConnection*>(stream->data);
         if (nread < 0) {
-            self.ready.onError(nread);
+            self.onError(nread);
         } else {
-            self.ready.onRead(nread, buf);
+            self.read_promise.run(uv_buf_t {buf->base, (size_t)nread});
         }
     }
 
     static void on_write(uv_write_t *req, int status) {
         TcpConnection &self = *reinterpret_cast<TcpConnection*>(req->data);
         if (status != 0) {
-            self.ready.onError(status);
+            self.onError(status);
         } else {
             for (unsigned i = 0; i < self.write_num; i++) {
                 self.write_queue.pop_front();
@@ -134,7 +147,6 @@ private:
     uv_tcp_t tcp;
     uv_connect_t req;
     uv_loop_t *loop = nullptr;
-    T &ready;
 };
 
 }

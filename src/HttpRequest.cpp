@@ -11,12 +11,12 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
 {
     if (http_parser_parse_url(addr, strlen(addr), false, &url)) {
         const char *err = "Parsing URL failed";
-        response_callback(UV_UNKNOWN, err, strlen(err));
+        error_promise.run(HttpError(HttpError::Kind::Request, Errno::URL_FAIL, err));
         return false;
     }
     if (!(url.field_set & (1 << UF_HOST))) {
         const char *err = "URL is missing host component";
-        response_callback(UV_UNKNOWN, err, strlen(err));
+        error_promise.run(HttpError(HttpError::Kind::Request, Errno::MISSING_HOST, err));
         return false;
     }
     if (!(url.field_set & (1 << UF_PATH))) {
@@ -35,7 +35,7 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
     }
     if (int res = dns.start(host.c_str(), service.c_str(), loop)) {
         const char *err = http_errno_description(static_cast<enum http_errno>(res));
-        response_callback(res, err, strlen(err));
+        error_promise.run(HttpError(HttpError::Kind::Http, res, err));
         return false;
     }
     return true;
@@ -73,7 +73,7 @@ void HttpRequest::onRead(size_t nread, const uv_buf_t *buf)
 void HttpRequest::onError(int status)
 {
     const char *error(uv_strerror(status));
-    response_callback(status, error, strlen(error));
+    error_promise.run(HttpError(HttpError::Kind::Uv, status, error));
 }
 
 int HttpRequest::__index(lua_State *L)
@@ -132,8 +132,8 @@ int HttpRequest::on_status(http_parser *parser, const char *buf, size_t length)
         // 5xx: SERVER ERROR
         if (code == 304 || code >= 400) {
             char err[1024];
-            size_t len = sprintf(err, "HTTP %li", code);
-            self.response_callback(UV_UNKNOWN, err, len);
+            sprintf(err, "HTTP %li", code);
+            self.error_promise.run(HttpError(HttpError::Kind::Status, code, err));
         }
         // ignore everything else
         break;
@@ -156,7 +156,7 @@ int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t le
         self.redirecting = false;
         self.cancelled = true;
         printf("redirect to: %s\n", str.c_str());
-        self.tcpcon.shutdown([=](int status) mutable {
+        self.tcpcon.shutdown([&self, str](int status) mutable {
                 (void)status;
                 printf("redirect shutdown\n");
                 self.response_headers.clear();
@@ -172,7 +172,7 @@ int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t le
 int HttpRequest::on_body(http_parser *parser, const char *buf, size_t length)
 {
     auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
-    self.response_callback(0, buf, length);
+    self.response_promise.run(make_tuple(buf, length));
     return 0;
 }
 
@@ -223,35 +223,35 @@ int HttpRequest::lua_new(lua_State *L)
         if (!strcmp(key, "unbuffered")) {
             lua_pushvalue(L, -1);
             auto ref = LuaRef::create(L);
-            req->response_callback = [=](int r, const char *k, size_t l) {
-                ref.push();
-                wrap_object(req, L);
-                lua_pushboolean(L, r == 0);
-                lua_pushlstring(L, k, l);
-                lua_pushboolean(L, http_body_is_final(&req->parser));
-                if (lua_pcall(L, 4, 0, 0)) {
-                    printf("http request callback: %s\n", lua_tostring(L, -1));
-                }
-            };
+            req->response_promise.then([=](tuple<const char *, size_t> t) {
+                    const char *k = get<0>(t);
+                    size_t l = get<1>(t);
+                    ref.push();
+                    wrap_object(req, L);
+                    lua_pushlstring(L, k, l);
+                    lua_pushboolean(L, http_body_is_final(&req->parser));
+                    if (lua_pcall(L, 3, 0, 0)) {
+                        printf("http request callback: %s\n", lua_tostring(L, -1));
+                    }
+                });
         }
         if (!strcmp(key, "callback")) {
             lua_pushvalue(L, -1);
             auto ref = LuaRef::create(L);
             string buffer;
-            req->response_callback = [=](int r, const char *k, size_t l) mutable {
-                if (!r) {
+            req->response_promise.then([=](tuple<const char *, size_t> t) mutable {
+                    const char *k = get<0>(t);
+                    size_t l = get<1>(t);
                     buffer.append(k,l);
-                }
-                if (!r && http_body_is_final(&req->parser)) {
-                    ref.push();
-                    wrap_object(req, L);
-                    lua_pushboolean(L, r == 0);
-                    lua_pushlstring(L, buffer.data(), buffer.size());
-                    if (lua_pcall(L, 3, 0, 0)) {
-                        printf("http request callback: %s\n", lua_tostring(L, -1));
+                    if (http_body_is_final(&req->parser)) {
+                        ref.push();
+                        wrap_object(req, L);
+                        lua_pushlstring(L, buffer.data(), buffer.size());
+                        if (lua_pcall(L, 2, 0, 0)) {
+                            printf("http request callback: %s\n", lua_tostring(L, -1));
+                        }
                     }
-                }
-            };
+                });
         }
     }
 

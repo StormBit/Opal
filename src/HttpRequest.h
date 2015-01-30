@@ -19,7 +19,27 @@ const char HttpRequestName[] = "HttpRequest";
 
 class HttpRequest : public ObjectMixins<HttpRequest, HttpRequestName>{
 public:
-    HttpRequest() : tcpcon(*this), dns(tcpcon) {
+    enum Errno {
+        URL_FAIL,
+        MISSING_HOST,
+    };
+
+    struct HttpError {
+        enum class Kind {
+            Uv,
+            Http,
+            Status,
+            Request
+        };
+
+        HttpError(Kind kind, int code, const char *msg) : kind(kind), code(code), msg(msg) {}
+
+        const Kind kind;
+        const int code;
+        const char *msg;
+    };
+
+    HttpRequest() {
         memset(&settings, 0, sizeof(http_parser_settings));
         settings.on_message_begin = &HttpRequest::noop;
         settings.on_status = &HttpRequest::on_status;
@@ -42,7 +62,8 @@ public:
     http_method method = HTTP_GET;
     std::unordered_map<std::string, std::string> request_headers;
     std::unordered_map<std::string, std::string> response_headers;
-    std::function<void (int, const char*, size_t)> response_callback;
+    Promise<HttpError> error_promise;
+    Promise<std::tuple<const char*, size_t>> response_promise;
 
     int __index(lua_State *L);
     static void openlib(lua_State *L);
@@ -59,8 +80,8 @@ private:
     http_parser_url url;
     http_parser parser;
     http_parser_settings settings;
-    TcpConnection<HttpRequest> tcpcon;
-    DnsResolver<TcpConnection<HttpRequest>> dns;
+    TcpConnection tcpcon;
+    DnsResolver dns;
     std::string host, service, path, current_header;
     uv_loop_t *loop = nullptr;
     uv_tcp_t *tcp = nullptr;

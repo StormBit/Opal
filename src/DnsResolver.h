@@ -5,18 +5,17 @@
 #include <uv.h>
 
 #include "Util.h"
+#include "Promise.h"
+#include "Result.h"
 
 namespace bot {
 
-template<class T>
 struct DnsResolver {
     uv_getaddrinfo_t req;
     const char *node = nullptr, *service = nullptr;
     uv_loop_t *loop = nullptr;
-    T &ready;
-
-    DnsResolver(T &ready)
-        : ready(ready) {}
+    Promise<struct sockaddr*> addr_promise;
+    Promise<int> error_promise;
 
     int start(const char *node, const char *service, uv_loop_t *loop) {
         this->node = node;
@@ -29,9 +28,9 @@ struct DnsResolver {
         (void)status;
         DnsResolver &self = *reinterpret_cast<DnsResolver*>(req);
         if (status) {
-            self.ready.onError(status);
+            self.error_promise.run(status);
         } else {
-            self.ready.start(self.loop, res->ai_addr);
+            self.addr_promise.run(res->ai_addr);
         }
     }
 };
