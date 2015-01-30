@@ -53,11 +53,7 @@ public:
     }
 
     bool begin(const char *url, uv_loop_t *loop);
-    int start(uv_loop_t *loop, uv_tcp_t *addr);
     void cancel();
-
-    void onRead(size_t nread, const uv_buf_t *buf);
-    void onError(int status);
 
     http_method method = HTTP_GET;
     std::unordered_map<std::string, std::string> request_headers;
@@ -80,11 +76,10 @@ private:
     http_parser_url url;
     http_parser parser;
     http_parser_settings settings;
-    TcpConnection tcpcon;
+    TcpConnection tcp;
     DnsResolver dns;
     std::string host, service, path, current_header;
     uv_loop_t *loop = nullptr;
-    uv_tcp_t *tcp = nullptr;
     LuaRef ref;
     bool cancelled = false, redirecting = false;
 };

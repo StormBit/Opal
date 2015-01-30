@@ -50,11 +50,7 @@ function do_title(url, cb)
    httprequest.new {
       ["url"] = url,
       method = "GET",
-      unbuffered = function(self, r, s, d)
-         if not r then
-            cb(s)
-            return
-         end
+      unbuffered = function(self, s, d)
          local res, err = run(s)
          if res then
             cb("Title: "..res)

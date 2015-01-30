@@ -9,6 +9,7 @@ using namespace bot;
 
 bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
 {
+    this->loop = loop;
     if (http_parser_parse_url(addr, strlen(addr), false, &url)) {
         const char *err = "Parsing URL failed";
         error_promise.run(HttpError(HttpError::Kind::Request, Errno::URL_FAIL, err));
@@ -33,6 +34,20 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
     if (url.field_set & (1 << UF_QUERY)) {
         path += "?" + string(addr + url.field_data[UF_QUERY].off, url.field_data[UF_QUERY].len);
     }
+    tcp.connected_promise.then([=](uv_tcp_t*) {
+            tcp.writef("%s %s HTTP/1.1\r\n", http_method_str(method), path.c_str());
+            tcp.writef("Host: %s\r\n", host.c_str());
+            for (auto &kv : request_headers) {
+                tcp.writef("%s: %s\r\n", kv.first.c_str(), kv.second.c_str());
+            }
+            tcp.writef("\r\n");
+        });
+    tcp.read_promise.then([=](uv_buf_t buf) {
+            if (!cancelled) {
+                http_parser_execute(&parser, &settings, buf.base, buf.len);
+            }
+        });
+    tcp.start(loop, dns.addr_promise);
     if (int res = dns.start(host.c_str(), service.c_str(), loop)) {
         const char *err = http_errno_description(static_cast<enum http_errno>(res));
         error_promise.run(HttpError(HttpError::Kind::Http, res, err));
@@ -41,39 +56,12 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
     return true;
 }
 
-int HttpRequest::start(uv_loop_t *loop, uv_tcp_t *tcp)
-{
-    this->loop = loop;
-    this->tcp = tcp;
-    tcpcon.writef("%s %s HTTP/1.1\r\n", http_method_str(method), path.c_str());
-    tcpcon.writef("Host: %s\r\n", host.c_str());
-    for (auto &kv : request_headers) {
-        tcpcon.writef("%s: %s\r\n", kv.first.c_str(), kv.second.c_str());
-    }
-    tcpcon.writef("\r\n");
-    return 0;
-}
-
 void HttpRequest::cancel()
 {
-    tcpcon.shutdown([=](int status) {
-            (void)status;
+    tcp.shutdown([=](int) {
             ref.unref();
         });
     cancelled = true;
-}
-
-void HttpRequest::onRead(size_t nread, const uv_buf_t *buf)
-{
-    if (!cancelled) {
-        http_parser_execute(&parser, &settings, buf->base, nread);
-    }
-}
-
-void HttpRequest::onError(int status)
-{
-    const char *error(uv_strerror(status));
-    error_promise.run(HttpError(HttpError::Kind::Uv, status, error));
 }
 
 int HttpRequest::__index(lua_State *L)
@@ -156,7 +144,7 @@ int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t le
         self.redirecting = false;
         self.cancelled = true;
         printf("redirect to: %s\n", str.c_str());
-        self.tcpcon.shutdown([&self, str](int status) mutable {
+        self.tcp.shutdown([&self, str](int status) mutable {
                 (void)status;
                 printf("redirect shutdown\n");
                 self.response_headers.clear();
