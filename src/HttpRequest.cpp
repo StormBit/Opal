@@ -47,7 +47,6 @@ int HttpRequest::start(uv_loop_t *loop, uv_tcp_t *tcp)
     this->tcp = tcp;
     tcpcon.writef("%s %s HTTP/1.1\r\n", http_method_str(method), path.c_str());
     tcpcon.writef("Host: %s\r\n", host.c_str());
-    tcpcon.writef("Accept-Charset: UTF-8\r\n");
     for (auto &kv : request_headers) {
         tcpcon.writef("%s: %s\r\n", kv.first.c_str(), kv.second.c_str());
     }
@@ -61,11 +60,14 @@ void HttpRequest::cancel()
             (void)status;
             ref.unref();
         });
+    cancelled = true;
 }
 
 void HttpRequest::onRead(size_t nread, const uv_buf_t *buf)
 {
-    http_parser_execute(&parser, &settings, buf->base, nread);
+    if (!cancelled) {
+        http_parser_execute(&parser, &settings, buf->base, nread);
+    }
 }
 
 void HttpRequest::onError(int status)
@@ -106,6 +108,39 @@ int HttpRequest::noop(http_parser *parser)
     return 0;
 }
 
+int HttpRequest::on_status(http_parser *parser, const char *buf, size_t length)
+{
+    (void)buf, (void)length;
+    auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
+    long code = parser->status_code;
+    switch (code) {
+    case 200: // OK
+    case 201: // CREATED
+    case 206: // PARTIAL CONTENT
+        break; // continue as normal
+    case 301: // MOVED PERMANENTLY
+    case 302: // FOUND
+    case 303: // SEE OTHER
+    case 307: // TEMPORARY REDIRECT
+    case 308: // PERMANENT REDIRECT
+        self.redirecting = true; // start a new request
+        printf("redirect start\n");
+        break;
+    default:
+        // 304: NOT MODIFIED
+        // 4xx: CLIENT ERROR
+        // 5xx: SERVER ERROR
+        if (code == 304 || code >= 400) {
+            char err[1024];
+            size_t len = sprintf(err, "HTTP %li", code);
+            self.response_callback(UV_UNKNOWN, err, len);
+        }
+        // ignore everything else
+        break;
+    }
+    return 0;
+}
+
 int HttpRequest::on_header_field(http_parser *parser, const char *buf, size_t length)
 {
     auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
@@ -116,7 +151,21 @@ int HttpRequest::on_header_field(http_parser *parser, const char *buf, size_t le
 int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t length)
 {
     auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
-    self.response_headers.emplace(self.current_header, string(buf, length));
+    string str(buf, length);
+    if (self.redirecting && self.current_header == "Location") {
+        self.redirecting = false;
+        self.cancelled = true;
+        printf("redirect to: %s\n", str.c_str());
+        self.tcpcon.shutdown([=](int status) mutable {
+                (void)status;
+                printf("redirect shutdown\n");
+                self.response_headers.clear();
+                self.cancelled = false;
+                self.begin(str.c_str(), self.loop);
+            });
+        return 1;
+    }
+    self.response_headers.emplace(std::move(self.current_header), std::move(str));
     return 0;
 }
 

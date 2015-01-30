@@ -22,11 +22,14 @@ public:
     HttpRequest() : tcpcon(*this), dns(tcpcon) {
         memset(&settings, 0, sizeof(http_parser_settings));
         settings.on_message_begin = &HttpRequest::noop;
+        settings.on_status = &HttpRequest::on_status;
         settings.on_header_field = &HttpRequest::on_header_field;
         settings.on_header_value = &HttpRequest::on_header_value;
         settings.on_body = &HttpRequest::on_body;
         http_parser_init(&parser, HTTP_RESPONSE);
         parser.data = this;
+        request_headers.emplace("Accept-Charset", "UTF-8");
+        request_headers.emplace("User-Agent", "OpalIRC");
     }
 
     bool begin(const char *url, uv_loop_t *loop);
@@ -46,6 +49,7 @@ public:
 
 private:
     static int noop(http_parser *parser);
+    static int on_status(http_parser *parser, const char *buf, size_t length);
     static int on_header_field(http_parser *parser, const char *buf, size_t length);
     static int on_header_value(http_parser *parser, const char *buf, size_t length);
     static int on_body(http_parser *parser, const char *buf, size_t length);
@@ -61,6 +65,7 @@ private:
     uv_loop_t *loop = nullptr;
     uv_tcp_t *tcp = nullptr;
     LuaRef ref;
+    bool cancelled = false, redirecting = false;
 };
 
 }

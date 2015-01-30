@@ -61,7 +61,7 @@ function do_title(url, cb)
          elseif res == false then
             cb(err)
          end
-         if res ~= nil then
+         if res ~= nil or d then
             self:cancel()
          end
       end
@@ -75,7 +75,7 @@ function message(t)
             t.server:write(string.format("PRIVMSG %s :%s\r\n", t.channel, res))
          end
       end
-      local res = do_title(u, cb)
+      do_title(u, cb)
    end
 end
 eventbus:hook("message", message)
