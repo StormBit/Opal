@@ -15,6 +15,10 @@ namespace bot {
 
 class TcpConnection {
 public:
+    TcpConnection() = default;
+    TcpConnection(TcpConnection &) = delete;
+    TcpConnection(TcpConnection &&) = delete;
+
     void start(uv_loop_t *loop, Promise<struct sockaddr *> &promise) {
         promise.then([=](struct sockaddr* addr) {
                 int res = start(loop, addr);

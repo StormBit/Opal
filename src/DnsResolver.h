@@ -17,6 +17,10 @@ struct DnsResolver {
     Promise<struct sockaddr*> addr_promise;
     Promise<int> error_promise;
 
+    DnsResolver() = default;
+    DnsResolver(DnsResolver &) = delete;
+    DnsResolver(DnsResolver &&) = delete;
+
     int start(const char *node, const char *service, uv_loop_t *loop) {
         this->node = node;
         this->service = service;

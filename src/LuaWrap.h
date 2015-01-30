@@ -85,7 +85,13 @@ private:
 template<class T, const char *tname_>
 class ObjectMixins : public IObject {
 public:
+    ObjectMixins() = default;
+    ObjectMixins(ObjectMixins &other) = delete;
+    ObjectMixins(ObjectMixins &&other) = delete;
     ~ObjectMixins() {}
+
+    T &operator=(const T& other) = delete;
+    T &operator=(T &&other) = delete;
 
     const char *tname() const {
         return tname_;
