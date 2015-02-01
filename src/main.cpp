@@ -21,6 +21,14 @@ void print(const string &str)
     printf("%s\n", str.c_str());
 }
 
+static int mod_filter(const struct dirent *dir)
+{
+    if (dir->d_name[0] == '.') {
+        return 0;
+    }
+    return 1;
+}
+
 #ifndef TEST
 int main(int argc, char **argv)
 {
@@ -30,11 +38,22 @@ int main(int argc, char **argv)
     uv_loop_init(&loop);
 
     EventBus bus;
-    LuaModule test("test"), link("link");
-    bus.addBus(test.bus);
-    bus.addBus(link.bus);
-    test.loadrun(&loop);
-    link.loadrun(&loop);
+    vector<unique_ptr<LuaModule>> modules;
+    struct dirent **namelist;
+    int n = scandir("modules", &namelist, mod_filter, alphasort);
+    if (n < 0) {
+        perror("scandir");
+        return 1;
+    }
+    for (unsigned i = 0; i < (unsigned)n; i++) {
+        const char *dname = namelist[i]->d_name;
+        const char *end = strrchr(dname, '.');
+        string stripped = end? string(dname, end - dname) : string(dname);
+        modules.emplace_back(new LuaModule(stripped.c_str()));
+        auto &mod = *modules.back();
+        bus.addBus(mod.bus);
+        mod.loadrun(&loop);
+    }
 
     string name = "Opal";
     string addr = "irc.stormbit.net";
