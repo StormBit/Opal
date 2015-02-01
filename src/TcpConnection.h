@@ -49,6 +49,7 @@ private:
     uv_tcp_t tcp;
     uv_connect_t req;
     uv_loop_t *loop = nullptr;
+    bool active = false;
 };
 
 }

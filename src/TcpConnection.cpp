@@ -27,10 +27,15 @@ int TcpConnection::start(uv_loop_t *loop, struct sockaddr *addr) {
         return res;
     }
     req.data = this;
+    active = true;
     return 0;
 }
 
 void TcpConnection::shutdown(std::function<void ()> &&callback) {
+    if (!active) {
+        return;
+    }
+    active = false;
     int res;
     if ((res = uv_read_stop(reinterpret_cast<uv_stream_t*>(&tcp)))) {
         onError(res);

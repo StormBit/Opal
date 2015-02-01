@@ -12,6 +12,7 @@
 #include "LuaRef.h"
 #include "DnsResolver.h"
 #include "TcpConnection.h"
+#include "Timer.h"
 
 namespace bot {
 
@@ -23,6 +24,7 @@ public:
         URL_FAIL,
         MISSING_HOST,
         REDIRECT_LOOP,
+        TIMEOUT
     };
 
     struct HttpError {
@@ -41,6 +43,9 @@ public:
     };
 
     HttpRequest();
+    ~HttpRequest() {
+        printf("~HttpRequest\n");
+    }
 
     bool begin(const char *url, uv_loop_t *loop);
     void cancel();
@@ -56,6 +61,8 @@ public:
     static void openlib(lua_State *L);
 
 private:
+    void restart(std::string &&url);
+
     static int noop(http_parser *parser);
     static int on_status(http_parser *parser, const char *buf, size_t length);
     static int on_header_field(http_parser *parser, const char *buf, size_t length);
@@ -70,6 +77,7 @@ private:
     http_parser_settings settings;
     TcpConnection tcp;
     DnsResolver dns;
+    Timer timer;
     std::string host, service, path, current_header;
     uv_loop_t *loop = nullptr;
     LuaRef ref;

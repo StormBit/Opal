@@ -46,6 +46,13 @@ HttpRequest::HttpRequest() {
             }
             error_promise.run(HttpError(HttpError::Kind::Uv, err, uv_strerror(err)));
         });
+    timer.promise.then([=]() {
+            error_promise.run(HttpError(HttpError::Kind::Request, Errno::TIMEOUT, "Connection timed out"));
+            cancel();
+        });
+    finish_promise.then([=]() {
+            timer.stop();
+        });
 }
 
 bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
@@ -82,17 +89,67 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
         error_promise.run(HttpError(HttpError::Kind::Http, res, err));
         return false;
     }
+    timer.start(loop, 15 * 1000); // 15 seconds is a decent timeout
     return true;
 }
 
 void HttpRequest::cancel()
 {
     if (!cancelled) {
+        struct x {
+            void dec() {
+                count--;
+                if (count < 1) {
+                    ref.unref();
+                }
+            }
+
+            int count;
+            LuaRef ref;
+        };
+        shared_ptr<x> x(new struct x);
+        x->count = 2;
+        x->ref = ref;
         tcp.shutdown([=]() {
-                ref.unref();
+                x->dec();
+            });
+        timer.stop();
+        timer.close([=]() {
+                x->dec();
             });
         cancelled = true;
     }
+}
+
+void HttpRequest::restart(string &&url)
+{
+    cancelled = true;
+    struct x {
+        x(int count, LuaRef ref, HttpRequest &req, string &&url)
+            : count(count), ref(ref), req(req), url(move(url)) {}
+
+        void dec() {
+            count--;
+            if (count < 1) {
+                req.response_headers.clear();
+                req.cancelled = false;
+                req.begin(url.c_str(), req.loop);
+            }
+        }
+
+        int count;
+        LuaRef ref;
+        HttpRequest &req;
+        std::string url;
+    };
+    shared_ptr<x> x(new struct x(2, ref, *this, move(url)));
+    tcp.shutdown([=]() {
+            x->dec();
+        });
+    timer.stop();
+    timer.close([=]() {
+            x->dec();
+        });
 }
 
 int HttpRequest::__index(lua_State *L)
@@ -176,12 +233,7 @@ int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t le
     string str(buf, length);
     if (self.redirecting && self.current_header == "Location") {
         self.redirecting = false;
-        self.cancelled = true;
-        self.tcp.shutdown([&self, str]() mutable {
-                self.response_headers.clear();
-                self.cancelled = false;
-                self.begin(str.c_str(), self.loop);
-            });
+        self.restart(move(str));
         return 1;
     }
     self.response_headers.emplace(std::move(self.current_header), std::move(str));
@@ -199,6 +251,7 @@ int HttpRequest::on_message_complete(http_parser *parser)
 {
     auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
     self.finish_promise.run();
+    self.cancel();
     return 0;
 }
 

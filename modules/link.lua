@@ -1,48 +1,53 @@
 function url_parser()
-   function read_lt(c)
+   local t = {
+      cur_tag = "",
+      title = "",
+      total = 0
+   }
+
+   function t.read_lt(c)
       if c == "<" then
-         return read_tag
+         return t.read_tag
       end
-      return read_lt
+      return t.read_lt
    end
-   local cur_tag = ""
-   function read_tag(c)
+   function t.read_tag(c)
       if c == ">" then
-         local t = cur_tag
-         cur_tag = ""
-         if t:lower() == "title" then
-            return read_title
+         local tag = t.cur_tag
+         t.cur_tag = ""
+         if tag:lower() == "title" then
+            return t.read_title
          else
-            return read_lt
+            return t.read_lt
          end
       end
-      cur_tag = cur_tag..c
-      return read_tag
+      t.cur_tag = t.cur_tag..c
+      return t.read_tag
    end
-   local title = ""
-   function read_title(c)
+   function t.read_title(c)
       if c == "<" then
-         return nil
+         return false
       end
-      title = title .. c
-      return read_title
+      print(c)
+      t.title = t.title .. c
+      return t.read_title
    end
-   local fn = read_lt
-   local total = 0
-   function run(s)
-      if not fn then
+
+   t.fn = t.read_lt
+   return function(s)
+      if not t.fn then
          return false, "fn is nil"
       end
       for i = 1, #s do
-         total = total + 1
-         if total > 2000 then
+         t.total = t.total + 1
+         if t.total > 2000 then
             return false, "Couldn't find <title>"
          end
-         fn = fn(s:sub(i,i))
-         if not fn then return title end
+         t.fn = t.fn(s:sub(i,i))
+         if t.fn == false then return t.title end
+         if not t.fn then return false, "fn returned nil" end
       end
    end
-   return run
 end
 
 function do_title(url, cb)
@@ -51,7 +56,7 @@ function do_title(url, cb)
       ["url"] = url,
       method = "GET",
       unbuffered = function(self, s)
-         local res, err = run(s)
+         local res, err = parser(s)
          if res then
             cb("Title: "..res)
          elseif res == false then
