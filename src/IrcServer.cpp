@@ -26,7 +26,7 @@ void IrcServer::handleMessage(const IrcMessage &msg)
 {
     printf("<<< %s\n", to_string(msg).c_str());
     if (msg.command == "001") {
-        bus.fire("server-connect", EventBus::Value(static_cast<IObject&>(*this)));
+        bus.fire("server-connect", Value(static_cast<IObject&>(*this)));
         for (auto &c : channels_to_join) {
             tcp.writef("JOIN :%s\r\n", c.c_str());
         }
@@ -45,7 +45,7 @@ void IrcServer::handleMessage(const IrcMessage &msg)
         if (msg.params.size() < 2) {
             return;
         }
-        std::unique_ptr<EventBus::Value::Table> table(new EventBus::Value::Table {
+        std::unique_ptr<Value::Table> table(new Value::Table {
                 {"server", static_cast<IObject&>(*this)},
                 {"nick", msg.nickname},
                 {"channel", msg.params[0]},
@@ -72,7 +72,7 @@ void IrcServer::handleMessage(const IrcMessage &msg)
 
 void IrcServer::handleCommand(const string &nick, const string &chan, const string &cmd, const string &args)
 {
-    std::unique_ptr<EventBus::Value::Table> table(new EventBus::Value::Table {
+    std::unique_ptr<Value::Table> table(new Value::Table {
             {"server", static_cast<IObject&>(*this)},
             {"nick", nick},
             {"channel", chan},

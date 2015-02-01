@@ -31,14 +31,10 @@ int main(int argc, char **argv)
 
     EventBus bus;
     LuaModule test("test"), link("link");
-    test.load(&loop);
-    test.openlib(bus);
-    HttpRequest::openlib(test.getL());
-    test.run();
-    link.load(&loop);
-    link.openlib(bus);
-    HttpRequest::openlib(link.getL());
-    link.run();
+    bus.addBus(test.bus);
+    bus.addBus(link.bus);
+    test.loadrun(&loop);
+    link.loadrun(&loop);
 
     string name = "Opal";
     string addr = "irc.stormbit.net";

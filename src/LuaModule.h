@@ -9,6 +9,7 @@
 
 #include "LuaWrap.h"
 #include "LuaRef.h"
+#include "EventBus.h"
 
 namespace bot {
 
@@ -18,12 +19,9 @@ class LuaModule : public ObjectMixins<LuaModule, LuaModuleName> {
 public:
     LuaModule(std::string &&name) : name(name) {}
 
+    void loadrun(uv_loop_t *loop);
     void load(uv_loop_t *loop);
     void run();
-    template<class T>
-    void openlib(T &val) {
-        val.openlib(L);
-    }
     lua_State *getL() {
         return L;
     }
@@ -31,9 +29,11 @@ public:
     static LuaModule &getModule(lua_State *L);
 
     uv_loop_t *loop = nullptr;
+    LuaBus bus;
 
 private:
     void reload();
+    void openlibs();
     void register_file(const std::string &file);
 
     static int loader_wrapper(lua_State *L);
@@ -43,8 +43,7 @@ private:
     std::unordered_map<std::string, uv_fs_event_t> files;
     std::string name;
     lua_State *L = nullptr;
-    int chunk = 0;
-    LuaRef old_loader;
+    LuaRef chunk;
 };
 
 }

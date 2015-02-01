@@ -28,7 +28,6 @@ function url_parser()
       if c == "<" then
          return false
       end
-      print(c)
       t.title = t.title .. c
       return t.read_title
    end

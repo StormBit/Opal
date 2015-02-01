@@ -3,8 +3,16 @@
 #include <cstring>
 #include <unistd.h>
 
+#include "HttpRequest.h"
+
 using namespace std;
 using namespace bot;
+
+void LuaModule::loadrun(uv_loop_t *loop)
+{
+    load(loop);
+    run();
+}
 
 void LuaModule::load(uv_loop_t *loop)
 {
@@ -13,28 +21,15 @@ void LuaModule::load(uv_loop_t *loop)
     lua_pushstring(L, "LuaModuleInstance");
     wrap_object(this, L);
     lua_rawset(L, LUA_REGISTRYINDEX);
-    luaL_openlibs(L);
-
-    {
-        int top = lua_gettop(L);
-        lua_getglobal(L, "package");
-        lua_pushstring(L, "loaders");
-        lua_gettable(L, -2);
-        int loaders = lua_gettop(L);
-        lua_rawgeti(L, loaders, 2);
-        old_loader = LuaRef::create(L);
-        wrap_object(this, L);
-        lua_pushcclosure(L, &LuaModule::loader_wrapper, 1);
-        lua_rawseti(L, loaders, 2);
-        lua_pop(L, 2);
-        assert(top == lua_gettop(L));
-    }
+    openlibs();
 
     reload();
 }
 
 void LuaModule::reload()
 {
+    bus.clear();
+
     {
         int top = lua_gettop(L);
         lua_getglobal(L, "package");
@@ -51,21 +46,44 @@ void LuaModule::reload()
         const char *str = lua_tostring(L, -1);
         printf("error loading module %s: %s\n", name.c_str(), str);
     } else {
-        chunk = luaL_ref(L, LUA_REGISTRYINDEX);
+        chunk = LuaRef::create(L);
     }
 }
 
 void LuaModule::run()
 {
-    if (!chunk) {
+    if (chunk.empty()) {
+        printf("empty chunk\n");
         return;
     }
-    lua_pushinteger(L, chunk);
-    lua_gettable(L, LUA_REGISTRYINDEX);
+    chunk.push();
     if (lua_pcall(L, 0, 0, 0)) {
         const char *str = lua_tostring(L, -1);
         printf("error running module %s: %s\n", name.c_str(), str);
     }
+}
+
+void LuaModule::openlibs()
+{
+    printf("openlibs()\n");
+    luaL_openlibs(L);
+
+    {
+        int top = lua_gettop(L);
+        lua_getglobal(L, "package");
+        lua_pushstring(L, "loaders");
+        lua_gettable(L, -2);
+        int loaders = lua_gettop(L);
+        lua_rawgeti(L, loaders, 2);
+        wrap_object(this, L);
+        lua_pushcclosure(L, &LuaModule::loader_wrapper, 2);
+        lua_rawseti(L, loaders, 2);
+        lua_pop(L, 2);
+        assert(top == lua_gettop(L));
+    }
+
+    bus.openlib(L);
+    HttpRequest::openlib(L);
 }
 
 LuaModule &LuaModule::getModule(lua_State *L)
@@ -88,8 +106,9 @@ void LuaModule::register_file(const std::string &file)
 
 int LuaModule::loader_wrapper(lua_State *L)
 {
-    auto &self = LuaModule::unwrap(L, lua_upvalueindex(1));
+    auto &self = LuaModule::unwrap(L, lua_upvalueindex(2));
     const char *name = luaL_checkstring(L, 1);
+    printf("require %s\n", name);
 
     int top = lua_gettop(L);
     lua_getglobal(L, "package");
@@ -113,8 +132,7 @@ int LuaModule::loader_wrapper(lua_State *L)
                 }
                 npath += string(tok_start, question - tok_start);
                 npath += name;
-                npath += string(question + 1, tok_end - question);
-                printf("%s\n", npath.c_str());
+                npath += string(question + 1, tok_end - question - 1);
                 if (!access(npath.c_str(), F_OK)) {
                     self.register_file(npath);
                 }
@@ -131,7 +149,8 @@ int LuaModule::loader_wrapper(lua_State *L)
     }
     lua_pop(L, 2);
     assert(top == lua_gettop(L));
-    self.old_loader.push();
+    lua_pushvalue(L, lua_upvalueindex(1));
+    luaL_checktype(L, -1, LUA_TFUNCTION);
     lua_pushvalue(L, 1);
     lua_call(L, 1, LUA_MULTRET);
     return lua_gettop(L) - top;

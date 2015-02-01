@@ -8,11 +8,12 @@ namespace bot {
 class LuaRef {
 public:
     LuaRef() {}
-    LuaRef(lua_State *L, int ref) : L(L), ref(ref) {}
 
     void unref() {
         if (L) {
             luaL_unref(L, LUA_REGISTRYINDEX, ref);
+            L = nullptr;
+            ref = LUA_NOREF;
         }
     }
 
@@ -28,7 +29,13 @@ public:
         lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
     }
 
+    bool empty() const {
+        return L == nullptr || ref == LUA_NOREF;
+    }
+
 private:
+    LuaRef(lua_State *L, int ref) : L(L), ref(ref) {}
+
     lua_State *L = nullptr;
     int ref = LUA_NOREF;
 };
