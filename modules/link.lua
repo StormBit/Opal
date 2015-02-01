@@ -50,16 +50,20 @@ function do_title(url, cb)
    httprequest.new {
       ["url"] = url,
       method = "GET",
-      unbuffered = function(self, s, d)
+      unbuffered = function(self, s)
          local res, err = run(s)
          if res then
             cb("Title: "..res)
          elseif res == false then
             cb(err)
          end
-         if res ~= nil or d then
+         if res ~= nil then
             self:cancel()
          end
+      end,
+      error = function(self, msg, kind, code)
+         cb(msg)
+         self:cancel()
       end
    }
 end

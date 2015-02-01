@@ -40,6 +40,7 @@ private:
 
 template<>
 class Promise<void> {
+public:
     Promise() {}
     Promise(Promise&&) = delete;
 

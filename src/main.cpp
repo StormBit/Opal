@@ -46,7 +46,9 @@ int main(int argc, char **argv)
         "#test"
     };
     IrcServer irc(addr, name, name, name, move(chans), bus);
-    irc.start(addr.c_str(), "6667", &loop);
+    if (argc < 2) {
+        irc.start(addr.c_str(), "6667", &loop);
+    }
 
     uv_run(&loop, UV_RUN_DEFAULT);
 

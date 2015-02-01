@@ -1,14 +1,57 @@
 #include "HttpRequest.h"
 
 #include <cstring>
+#include <memory>
 
 #include "LuaModule.h"
 
 using namespace std;
 using namespace bot;
 
+HttpRequest::HttpRequest() {
+    memset(&settings, 0, sizeof(http_parser_settings));
+    settings.on_message_begin = &HttpRequest::noop;
+    settings.on_status = &HttpRequest::on_status;
+    settings.on_header_field = &HttpRequest::on_header_field;
+    settings.on_header_value = &HttpRequest::on_header_value;
+    settings.on_body = &HttpRequest::on_body;
+    settings.on_message_complete = &HttpRequest::on_message_complete;
+    request_headers.emplace("Accept-Charset", "UTF-8");
+    request_headers.emplace("User-Agent", "OpalIRC");
+    dns.addr_promise.then([=](struct sockaddr *addr) {
+            tcp.start(loop, addr);
+        });
+    dns.error_promise.then([=](int err) {
+            error_promise.run(HttpError(HttpError::Kind::Uv, err, uv_strerror(err)));
+        });
+    tcp.connected_promise.then([=](uv_tcp_t*) {
+            tcp.writef("%s %s HTTP/1.1\r\n", http_method_str(method), path.c_str());
+            tcp.writef("Host: %s\r\n", host.c_str());
+            // not technically necessary, but we can't currently reuse keepalive'd connections
+            tcp.writef("Connection: Close\r\n");
+            for (auto &kv : request_headers) {
+                tcp.writef("%s: %s\r\n", kv.first.c_str(), kv.second.c_str());
+            }
+            tcp.writef("\r\n");
+        });
+    tcp.read_promise.then([=](uv_buf_t buf) {
+            if (!cancelled) {
+                http_parser_execute(&parser, &settings, buf.base, buf.len);
+            }
+        });
+    tcp.error_promise.then([=](int err) {
+            if (err == UV_EOF) {
+                finish_promise.run();
+                return;
+            }
+            error_promise.run(HttpError(HttpError::Kind::Uv, err, uv_strerror(err)));
+        });
+}
+
 bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
 {
+    http_parser_init(&parser, HTTP_RESPONSE);
+    parser.data = this;
     this->loop = loop;
     if (http_parser_parse_url(addr, strlen(addr), false, &url)) {
         const char *err = "Parsing URL failed";
@@ -34,20 +77,6 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
     if (url.field_set & (1 << UF_QUERY)) {
         path += "?" + string(addr + url.field_data[UF_QUERY].off, url.field_data[UF_QUERY].len);
     }
-    tcp.connected_promise.then([=](uv_tcp_t*) {
-            tcp.writef("%s %s HTTP/1.1\r\n", http_method_str(method), path.c_str());
-            tcp.writef("Host: %s\r\n", host.c_str());
-            for (auto &kv : request_headers) {
-                tcp.writef("%s: %s\r\n", kv.first.c_str(), kv.second.c_str());
-            }
-            tcp.writef("\r\n");
-        });
-    tcp.read_promise.then([=](uv_buf_t buf) {
-            if (!cancelled) {
-                http_parser_execute(&parser, &settings, buf.base, buf.len);
-            }
-        });
-    tcp.start(loop, dns.addr_promise);
     if (int res = dns.start(host.c_str(), service.c_str(), loop)) {
         const char *err = http_errno_description(static_cast<enum http_errno>(res));
         error_promise.run(HttpError(HttpError::Kind::Http, res, err));
@@ -58,10 +87,12 @@ bool HttpRequest::begin(const char *addr, uv_loop_t *loop)
 
 void HttpRequest::cancel()
 {
-    tcp.shutdown([=](int) {
-            ref.unref();
-        });
-    cancelled = true;
+    if (!cancelled) {
+        tcp.shutdown([=]() {
+                ref.unref();
+            });
+        cancelled = true;
+    }
 }
 
 int HttpRequest::__index(lua_State *L)
@@ -111,8 +142,12 @@ int HttpRequest::on_status(http_parser *parser, const char *buf, size_t length)
     case 303: // SEE OTHER
     case 307: // TEMPORARY REDIRECT
     case 308: // PERMANENT REDIRECT
-        self.redirecting = true; // start a new request
-        printf("redirect start\n");
+        self.redirect_count++;
+        if (self.redirect_count > 5) {
+            self.error_promise.run(HttpError(HttpError::Kind::Request, Errno::REDIRECT_LOOP, "Redirection loop"));
+        } else {
+            self.redirecting = true; // start a new request
+        }
         break;
     default:
         // 304: NOT MODIFIED
@@ -120,7 +155,6 @@ int HttpRequest::on_status(http_parser *parser, const char *buf, size_t length)
         // 5xx: SERVER ERROR
         if (code == 304 || code >= 400) {
             char err[1024];
-            sprintf(err, "HTTP %li", code);
             self.error_promise.run(HttpError(HttpError::Kind::Status, code, err));
         }
         // ignore everything else
@@ -143,10 +177,7 @@ int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t le
     if (self.redirecting && self.current_header == "Location") {
         self.redirecting = false;
         self.cancelled = true;
-        printf("redirect to: %s\n", str.c_str());
-        self.tcp.shutdown([&self, str](int status) mutable {
-                (void)status;
-                printf("redirect shutdown\n");
+        self.tcp.shutdown([&self, str]() mutable {
                 self.response_headers.clear();
                 self.cancelled = false;
                 self.begin(str.c_str(), self.loop);
@@ -161,6 +192,13 @@ int HttpRequest::on_body(http_parser *parser, const char *buf, size_t length)
 {
     auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
     self.response_promise.run(make_tuple(buf, length));
+    return 0;
+}
+
+int HttpRequest::on_message_complete(http_parser *parser)
+{
+    auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
+    self.finish_promise.run();
     return 0;
 }
 
@@ -183,9 +221,11 @@ static int method_from_string(const char *str)
 int HttpRequest::lua_new(lua_State *L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
-    HttpRequest *req = new HttpRequest;
+    HttpRequest *req = new HttpRequest();
 
     string url;
+
+    bool have_error_cb = false;
 
     for (lua_pushnil(L); lua_next(L, 1); lua_pop(L, 1)) {
         const char *key = luaL_checkstring(L, -2);
@@ -217,27 +257,59 @@ int HttpRequest::lua_new(lua_State *L)
                     ref.push();
                     wrap_object(req, L);
                     lua_pushlstring(L, k, l);
-                    lua_pushboolean(L, http_body_is_final(&req->parser));
-                    if (lua_pcall(L, 3, 0, 0)) {
+                    if (lua_pcall(L, 2, 0, 0)) {
+                        printf("http request callback: %s\n", lua_tostring(L, -1));
+                    }
+                });
+        }
+        if (!strcmp(key, "finished")) {
+            lua_pushvalue(L, -1);
+            auto ref = LuaRef::create(L);
+            req->finish_promise.then([=]() {
+                    ref.push();
+                    wrap_object(req, L);
+                    if (lua_pcall(L, 0, 0, 0)) {
                         printf("http request callback: %s\n", lua_tostring(L, -1));
                     }
                 });
         }
         if (!strcmp(key, "callback")) {
             lua_pushvalue(L, -1);
-            auto ref = LuaRef::create(L);
-            string buffer;
+            struct ctx {
+                LuaRef ref;
+                string buffer;
+            };
+            shared_ptr<ctx> ctx = shared_ptr<struct ctx>(new struct ctx);
+            ctx->ref = LuaRef::create(L);
             req->response_promise.then([=](tuple<const char *, size_t> t) mutable {
                     const char *k = get<0>(t);
                     size_t l = get<1>(t);
-                    buffer.append(k,l);
-                    if (http_body_is_final(&req->parser)) {
-                        ref.push();
-                        wrap_object(req, L);
-                        lua_pushlstring(L, buffer.data(), buffer.size());
-                        if (lua_pcall(L, 2, 0, 0)) {
-                            printf("http request callback: %s\n", lua_tostring(L, -1));
-                        }
+                    ctx->buffer.append(k,l);
+                });
+            req->finish_promise.then([=]() {
+                    ctx->ref.push();
+                    wrap_object(req, L);
+                    lua_pushlstring(L, ctx->buffer.data(), ctx->buffer.size());
+                    if (lua_pcall(L, 2, 0, 0)) {
+                        printf("http request callback: %s\n", lua_tostring(L, -1));
+                    }
+                });
+        }
+        if (!strcmp(key, "error")) {
+            have_error_cb = true;
+            lua_pushvalue(L, -1);
+            auto ref = LuaRef::create(L);
+            req->error_promise.then([=](HttpError err) {
+                    static const char *const kinds[] = {
+                        "uv", "http", "status", "request"
+                    };
+                    ref.push();
+                    wrap_object(req, L);
+                    lua_pushstring(L, err.msg);
+                    lua_pushstring(L, kinds[static_cast<int>(err.kind)]);
+                    lua_pushinteger(L, err.code);
+                    if (lua_pcall(L, 4, 0, 0)) {
+                        printf("http error callback: %s\n", lua_tostring(L, -1));
                     }
                 });
         }
@@ -245,6 +317,12 @@ int HttpRequest::lua_new(lua_State *L)
 
     if (url.empty()) {
         luaL_error(L, "Must provide a URL");
+    }
+
+    if (!have_error_cb) {
+        req->error_promise.then([=](HttpError err) {
+                printf("http request: %s\n", err.msg);
+            });
     }
 
     uv_loop_t *loop = LuaModule::getModule(L).loop;

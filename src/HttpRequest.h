@@ -22,6 +22,7 @@ public:
     enum Errno {
         URL_FAIL,
         MISSING_HOST,
+        REDIRECT_LOOP,
     };
 
     struct HttpError {
@@ -39,18 +40,7 @@ public:
         const char *msg;
     };
 
-    HttpRequest() {
-        memset(&settings, 0, sizeof(http_parser_settings));
-        settings.on_message_begin = &HttpRequest::noop;
-        settings.on_status = &HttpRequest::on_status;
-        settings.on_header_field = &HttpRequest::on_header_field;
-        settings.on_header_value = &HttpRequest::on_header_value;
-        settings.on_body = &HttpRequest::on_body;
-        http_parser_init(&parser, HTTP_RESPONSE);
-        parser.data = this;
-        request_headers.emplace("Accept-Charset", "UTF-8");
-        request_headers.emplace("User-Agent", "OpalIRC");
-    }
+    HttpRequest();
 
     bool begin(const char *url, uv_loop_t *loop);
     void cancel();
@@ -60,6 +50,7 @@ public:
     std::unordered_map<std::string, std::string> response_headers;
     Promise<HttpError> error_promise;
     Promise<std::tuple<const char*, size_t>> response_promise;
+    Promise<void> finish_promise;
 
     int __index(lua_State *L);
     static void openlib(lua_State *L);
@@ -70,6 +61,7 @@ private:
     static int on_header_field(http_parser *parser, const char *buf, size_t length);
     static int on_header_value(http_parser *parser, const char *buf, size_t length);
     static int on_body(http_parser *parser, const char *buf, size_t length);
+    static int on_message_complete(http_parser *parser);
     static int lua_new(lua_State *L);
     static int lua_cancel(lua_State *L);
 
@@ -82,6 +74,7 @@ private:
     uv_loop_t *loop = nullptr;
     LuaRef ref;
     bool cancelled = false, redirecting = false;
+    unsigned redirect_count = 0;
 };
 
 }
