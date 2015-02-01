@@ -1,0 +1,6 @@
+servers:
+  - nick: Opal
+    address: irc.stormbit.net
+    port: 6667
+    channels:
+      - '#test'

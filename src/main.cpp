@@ -55,14 +55,19 @@ int main(int argc, char **argv)
         mod.loadrun(&loop);
     }
 
-    string name = "Opal";
-    string addr = "irc.stormbit.net";
-    vector<string> chans = {
-        "#test"
-    };
-    IrcServer irc(addr, name, name, name, move(chans), bus);
-    if (argc < 2) {
-        irc.start(addr.c_str(), "6667", &loop);
+    YAML::Node config = YAML::LoadFile("config.yaml");
+    vector<unique_ptr<IrcServer>> servers;
+
+    for (auto n : config["servers"]) {
+        string name = n["nick"].IsDefined()? n["nick"].as<string>() : "Opal";
+        string addr = n["address"].as<string>();
+        string port = n["port"].IsDefined()? n["port"].as<string>() : "6667";
+        vector<string> chans;
+        for (auto c : n["channels"]) {
+            chans.emplace_back(c.as<string>());
+        }
+        servers.emplace_back(new IrcServer(addr, name, name, name, move(chans), bus));
+        servers.back()->start(addr.c_str(), port.c_str(), &loop);
     }
 
     uv_run(&loop, UV_RUN_DEFAULT);
