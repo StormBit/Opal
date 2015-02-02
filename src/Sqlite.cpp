@@ -198,12 +198,20 @@ int Database::Statement::lua_bind(lua_State *L)
 int Database::Statement::lua_get(lua_State *L)
 {
     auto &self = unwrap(L, 1);
+    int nargs = lua_gettop(L);
     lua_newtable(L);
     int table = lua_gettop(L);
     unsigned row_num = 0;
     int res;
     if ((res = self.reset()) != SQLITE_OK) {
         printf("invalid start state: %s\n", sqlite3_errstr(res));
+    }
+    for (int i = 1; i < nargs; i++) {
+        lua_pushcfunction(L, &Database::Statement::lua_bind);
+        lua_pushvalue(L, 1);
+        lua_pushinteger(L, i);
+        lua_pushvalue(L, 1+i);
+        lua_call(L, 3, 0);
     }
     while ((res = self.step())) {
         switch (res) {

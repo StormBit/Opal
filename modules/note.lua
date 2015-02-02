@@ -9,12 +9,9 @@ findnotesquery = database:prepare "SELECT * FROM notes WHERE user_to = ? AND cha
 delnotesquery = database:prepare "DELETE FROM notes WHERE user_to = ? AND channel = ?;"
 addnotequery = database:prepare "INSERT INTO notes (channel, user_from, user_to, timestamp, message) VALUES (?, ?, ?, ?, ?);"
 function findnotes(user, chan)
-   findnotesquery:bind(1, user:lower())
-   findnotesquery:bind(2, chan)
-   local res = findnotesquery:get()
-   delnotesquery:bind(1, user:lower())
-   delnotesquery:bind(2, chan)
-   delnotesquery:get()
+   user = user:lower();
+   local res = findnotesquery:get(user, chan)
+   delnotesquery:get(user, chan)
    return res
 end
 
@@ -60,12 +57,7 @@ function do_notes(serv, user, chan)
 end
 
 function do_savenote(from, to, chan, msg)
-   addnotequery:bind(1, chan)
-   addnotequery:bind(2, from)
-   addnotequery:bind(3, to:lower())
-   addnotequery:bind(4, now())
-   addnotequery:bind(5, msg)
-   addnotequery:get()
+   addnotequery:get(chan, from, to:lower(), now(), msg)
 end
 
 function join(t)
