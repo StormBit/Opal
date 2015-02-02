@@ -115,9 +115,10 @@ int Database::Statement::__index(lua_State *L)
 int Database::Statement::lua_column(lua_State *L, int idx)
 {
     auto &self = unwrap(L, 1);
+    static_assert(sizeof(lua_Integer) >= sizeof(uint64_t), "lua_Integer is too small");
     switch (self.column_type(idx)) {
     case SQLITE_INTEGER:
-        lua_pushinteger(L, self.column_int(idx));
+        lua_pushinteger(L, self.column_int64(idx));
         return 1;
     case SQLITE_FLOAT:
         lua_pushnumber(L, self.column_double(idx));
