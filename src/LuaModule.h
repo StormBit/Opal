@@ -10,6 +10,7 @@
 #include "LuaWrap.h"
 #include "LuaRef.h"
 #include "EventBus.h"
+#include "Sqlite.h"
 
 namespace bot {
 
@@ -37,6 +38,7 @@ private:
     void register_file(const std::string &file);
 
     static int loader_wrapper(lua_State *L);
+    static int lua_now(lua_State *L);
     static void event_cb(uv_fs_event_t *handle, const char *filename,
                          int events, int status);
 
@@ -44,6 +46,7 @@ private:
     std::string name;
     lua_State *L = nullptr;
     LuaRef chunk;
+    Database db;
 };
 
 }

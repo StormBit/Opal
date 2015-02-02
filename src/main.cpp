@@ -29,6 +29,12 @@ static int mod_filter(const struct dirent *dir)
     return 1;
 }
 
+static void sigint_callback(uv_signal_t *handle, int signum)
+{
+    (void)signum;
+    uv_stop(handle->loop);
+}
+
 #ifndef TEST
 int main(int argc, char **argv)
 {
@@ -36,6 +42,10 @@ int main(int argc, char **argv)
 
     uv_loop_t loop;
     uv_loop_init(&loop);
+
+    uv_signal_t sigint;
+    uv_signal_init(&loop, &sigint);
+    uv_signal_start(&sigint, &sigint_callback, SIGINT);
 
     EventBus bus;
     vector<unique_ptr<LuaModule>> modules;

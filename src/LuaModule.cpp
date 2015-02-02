@@ -65,7 +65,6 @@ void LuaModule::run()
 
 void LuaModule::openlibs()
 {
-    printf("openlibs()\n");
     luaL_openlibs(L);
 
     {
@@ -84,6 +83,25 @@ void LuaModule::openlibs()
 
     bus.openlib(L);
     HttpRequest::openlib(L);
+
+    {
+        int res = mkdir("data/", 0755);
+        if (res != 0 && errno != EEXIST) {
+            perror("mkdir data/");
+            abort();
+        }
+        string path = "data/" + name + ".sqlite";
+        res = db.open(path.c_str());
+        if (res) {
+            printf("db.open: %s\n", sqlite3_errstr(res));
+        }
+        wrap_object(&db, L);
+        lua_setglobal(L, "database");
+    }
+
+    lua_pushlightuserdata(L, loop);
+    lua_pushcclosure(L, &LuaModule::lua_now, 1);
+    lua_setglobal(L, "now");
 }
 
 LuaModule &LuaModule::getModule(lua_State *L)
@@ -108,7 +126,6 @@ int LuaModule::loader_wrapper(lua_State *L)
 {
     auto &self = LuaModule::unwrap(L, lua_upvalueindex(2));
     const char *name = luaL_checkstring(L, 1);
-    printf("require %s\n", name);
 
     int top = lua_gettop(L);
     lua_getglobal(L, "package");
@@ -154,6 +171,13 @@ int LuaModule::loader_wrapper(lua_State *L)
     lua_pushvalue(L, 1);
     lua_call(L, 1, LUA_MULTRET);
     return lua_gettop(L) - top;
+}
+
+int LuaModule::lua_now(lua_State *L)
+{
+    uv_loop_t *loop = reinterpret_cast<uv_loop_t*>(lua_touserdata(L, lua_upvalueindex(1)));
+    lua_pushinteger(L, uv_now(loop));
+    return 1;
 }
 
 void LuaModule::event_cb(uv_fs_event_t *handle, const char *filename,

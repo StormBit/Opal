@@ -86,6 +86,7 @@ template<class T, const char *tname_>
 class ObjectMixins : public IObject {
 public:
     ObjectMixins() = default;
+    ObjectMixins(const ObjectMixins &other) = delete;
     ObjectMixins(ObjectMixins &other) = delete;
     ObjectMixins(ObjectMixins &&other) = delete;
     ~ObjectMixins() {}
@@ -109,15 +110,29 @@ public:
     }
 
     virtual int __index(lua_State *L) {(void)L; return 0;}
+    virtual int __newindex(lua_State *L) {(void)L; return 0;}
 
     static T &unwrap(lua_State *L, int index = -1) {
         return reinterpret_cast<LuaWrap<T>*>(luaL_checkudata(L, index, tname_))->get();
     }
 
+    static LuaWrap<T> &wrap_move(T &&obj, lua_State *L) {
+        auto &w = LuaWrap<T>::create(L, std::move(obj));
+        if (luaL_newmetatable(L, tname_)) {
+            w.get().meta(L);
+        }
+        lua_setmetatable(L, -2);
+        return w;
+    }
+
 private:
     static int raw__index(lua_State *L) {
-        T &self = reinterpret_cast<LuaWrap<T>*>(luaL_checkudata(L, 1, tname_))->get();
+        T &self = unwrap(L, 1);
         return self.__index(L);
+    }
+    static int raw__newindex(lua_State *L) {
+        T &self = unwrap(L, 1);
+        return self.__newindex(L);
     }
 };
 

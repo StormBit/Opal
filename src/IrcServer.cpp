@@ -41,17 +41,25 @@ void IrcServer::handleMessage(const IrcMessage &msg)
         tcp.writef("PONG :%s\r\n", v.c_str());
         return;
     }
+    if (msg.command == "JOIN") {
+        unique_ptr<Value::Table> table(new Value::Table {
+                {"server", static_cast<IObject&>(*this)},
+                {"nick", msg.nickname},
+                {"channel", msg.params[0]}
+            });
+        bus.fire("join", move(table));
+    }
     if (msg.command == "PRIVMSG") {
         if (msg.params.size() < 2) {
             return;
         }
-        std::unique_ptr<Value::Table> table(new Value::Table {
+        unique_ptr<Value::Table> table(new Value::Table {
                 {"server", static_cast<IObject&>(*this)},
                 {"nick", msg.nickname},
                 {"channel", msg.params[0]},
                 {"message", msg.params[1]}
             });
-        bus.fire("message", std::move(table));
+        bus.fire("message", move(table));
         if (nickname == msg.params[0]) {
             handleCommand(msg.nickname, msg.nickname, msg.params[0], msg.params[1]);
             return;
