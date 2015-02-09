@@ -30,10 +30,17 @@ HttpRequest::HttpRequest() {
             tcp.writef("Host: %s\r\n", host.c_str());
             // not technically necessary, but we can't currently reuse keepalive'd connections
             tcp.writef("Connection: Close\r\n");
+            if (!payload.empty()) {
+                tcp.writef("Content-Length: %zu\r\n", payload.size());
+            }
             for (auto &kv : request_headers) {
                 tcp.writef("%s: %s\r\n", kv.first.c_str(), kv.second.c_str());
             }
             tcp.writef("\r\n");
+            if (!payload.empty()) {
+                tcp.write(move(payload));
+                tcp.writef("\r\n");
+            }
         });
     tcp.read_promise.then([=](uv_buf_t buf) {
             if (!cancelled) {
@@ -155,12 +162,15 @@ void HttpRequest::restart(string &&url)
 
 int HttpRequest::__index(lua_State *L)
 {
-    auto &self = reinterpret_cast<LuaWrap<HttpRequest>*>(luaL_checkudata(L, 1, HttpRequestName))->get();
     const char *key = luaL_checkstring(L, 2);
 
-    const char *method = http_method_str(self.method);
+    const char *method = http_method_str(this->method);
     if (!strcmp(key, "method")) {
         lua_pushstring(L, method);
+        return 1;
+    }
+    if (!strcmp(key, "payload")) {
+        lua_pushlstring(L, payload.data(), payload.size());
         return 1;
     }
     if (!strcmp(key, "cancel")) {
@@ -169,13 +179,27 @@ int HttpRequest::__index(lua_State *L)
     }
     if (!strcmp(key, "responseheaders")) {
         lua_newtable(L);
-        for (auto &kv : self.response_headers) {
+        for (auto &kv : response_headers) {
             lua_pushlstring(L, kv.first.data(), kv.first.size());
             lua_pushlstring(L, kv.second.data(), kv.second.size());
             lua_settable(L, -3);
         }
         return 1;
     }
+    return 0;
+}
+
+int HttpRequest::__newindex(lua_State *L)
+{
+    const char *key = luaL_checkstring(L, 2);
+
+    if (!strcmp(key, "payload")) {
+        size_t len;
+        const char *str = lua_tolstring(L, 3, &len);
+        payload = string(str, len);
+    }
+
+    luaL_error(L, "Invalid key %s", key);
     return 0;
 }
 
@@ -311,6 +335,11 @@ int HttpRequest::lua_new(lua_State *L)
                 return 0;
             }
             req->method = static_cast<enum http_method>(res);
+        }
+        if (!strcmp(key, "payload")) {
+            size_t len;
+            const char *str = luaL_checklstring(L, -1, &len);
+            req->payload = string(str, len);
         }
         if (!strcmp(key, "headers")) {
             int t = lua_gettop(L);

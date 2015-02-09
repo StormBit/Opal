@@ -51,6 +51,7 @@ public:
     void cancel();
 
     http_method method = HTTP_GET;
+    std::string payload;
     std::unordered_map<std::string, std::string> request_headers;
     std::unordered_map<std::string, std::string> response_headers;
     Promise<HttpError> error_promise;
@@ -58,6 +59,7 @@ public:
     Promise<void> started_promise, finish_promise;
 
     int __index(lua_State *L);
+    int __newindex(lua_State *L);
     static void openlib(lua_State *L);
 
 private:
