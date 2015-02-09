@@ -55,7 +55,7 @@ public:
     std::unordered_map<std::string, std::string> response_headers;
     Promise<HttpError> error_promise;
     Promise<std::tuple<const char*, size_t>> response_promise;
-    Promise<void> finish_promise;
+    Promise<void> started_promise, finish_promise;
 
     int __index(lua_State *L);
     static void openlib(lua_State *L);
@@ -67,6 +67,7 @@ private:
     static int on_status(http_parser *parser, const char *buf, size_t length);
     static int on_header_field(http_parser *parser, const char *buf, size_t length);
     static int on_header_value(http_parser *parser, const char *buf, size_t length);
+    static int on_headers_complete(http_parser *parser);
     static int on_body(http_parser *parser, const char *buf, size_t length);
     static int on_message_complete(http_parser *parser);
     static int lua_new(lua_State *L);

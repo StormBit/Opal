@@ -1,4 +1,4 @@
-function url_parser()
+function title_parser()
    local t = {
       cur_tag = "",
       title = "",
@@ -49,13 +49,27 @@ function url_parser()
    end
 end
 
-function do_title(url, cb)
-   local parser = url_parser()
+function do_request(url, cb)
+   local handler
    httprequest.new {
       ["url"] = url,
       method = "GET",
+      started = function(self)
+         print('started')
+         local headers = self.responseheaders
+         local ct = headers['Content-Type']
+         if not ct then
+            self:cancel()
+         end
+         if ct:sub(1, 9) == 'text/html' then
+            handler = title_parser()
+         else
+            print("unknown content type: ", headers['Content-Type'])
+            self:cancel()
+         end
+      end,
       unbuffered = function(self, s)
-         local res, err = parser(s)
+         local res, err = handler(s)
          if res then
             cb("Title: "..res)
          elseif res == false then
@@ -79,7 +93,7 @@ function message(t)
             t.server:write(string.format("PRIVMSG %s :%s\r\n", t.channel, res))
          end
       end
-      do_title(u, cb)
+      do_request(u, cb)
    end
 end
 eventbus:hook("message", message)

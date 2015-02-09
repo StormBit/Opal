@@ -14,6 +14,7 @@ HttpRequest::HttpRequest() {
     settings.on_status = &HttpRequest::on_status;
     settings.on_header_field = &HttpRequest::on_header_field;
     settings.on_header_value = &HttpRequest::on_header_value;
+    settings.on_headers_complete = &HttpRequest::on_headers_complete;
     settings.on_body = &HttpRequest::on_body;
     settings.on_message_complete = &HttpRequest::on_message_complete;
     request_headers.emplace("Accept-Charset", "UTF-8");
@@ -166,6 +167,15 @@ int HttpRequest::__index(lua_State *L)
         lua_pushcfunction(L, &HttpRequest::lua_cancel);
         return 1;
     }
+    if (!strcmp(key, "responseheaders")) {
+        lua_newtable(L);
+        for (auto &kv : self.response_headers) {
+            lua_pushlstring(L, kv.first.data(), kv.first.size());
+            lua_pushlstring(L, kv.second.data(), kv.second.size());
+            lua_settable(L, -3);
+        }
+        return 1;
+    }
     return 0;
 }
 
@@ -240,10 +250,19 @@ int HttpRequest::on_header_value(http_parser *parser, const char *buf, size_t le
     return 0;
 }
 
+int HttpRequest::on_headers_complete(http_parser *parser)
+{
+    auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
+    self.started_promise.run();
+    return 0;
+}
+
 int HttpRequest::on_body(http_parser *parser, const char *buf, size_t length)
 {
     auto &self = *reinterpret_cast<HttpRequest*>(parser->data);
-    self.response_promise.run(make_tuple(buf, length));
+    if (!self.cancelled) {
+        self.response_promise.run(make_tuple(buf, length));
+    }
     return 0;
 }
 
@@ -300,6 +319,17 @@ int HttpRequest::lua_new(lua_State *L)
                 const char *value = luaL_checkstring(L, -1);
                 req->request_headers.emplace(key, value);
             }
+        }
+        if (!strcmp(key, "started")) {
+            lua_pushvalue(L, -1);
+            auto ref = LuaRef::create(L);
+            req->started_promise.then([=]() {
+                    ref.push();
+                    wrap_object(req, L);
+                    if (lua_pcall(L, 1, 0, 0)) {
+                        printf("http request callback: %s\n", lua_tostring(L, -1));
+                    }
+                });
         }
         if (!strcmp(key, "unbuffered")) {
             lua_pushvalue(L, -1);
