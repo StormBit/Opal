@@ -9,8 +9,7 @@
 #include "LuaWrap.h"
 #include "IrcParser.h"
 #include "EventBus.h"
-#include "TcpConnection.h"
-#include "DnsResolver.h"
+#include "Connection.h"
 
 namespace bot {
 
@@ -23,7 +22,7 @@ public:
         : address(address), nickname(nickname), user(user), realname(realname),
           channels_to_join(channels), bus(bus), prefix(prefix) {}
 
-    int start(const char *host, const char *service, uv_loop_t *loop);
+    Connection::Error start(uv_loop_t *loop, const char *host, const char *service, bool use_tls);
 
     int __index(lua_State *L);
 
@@ -32,8 +31,7 @@ private:
     void handleCommand(const std::string &nick, const std::string &chan, const std::string &cmd, const std::string &args);
     static int lua_write(lua_State *L);
 
-    TcpConnection tcp;
-    DnsResolver dns;
+    Connection con;
     std::string address, nickname, user, realname;
     std::vector<std::string> channels_to_join;
     IrcParser parser;

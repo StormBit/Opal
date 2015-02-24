@@ -12,6 +12,10 @@
 namespace bot {
 
 struct TlsContext {
+    TlsContext() = default;
+    TlsContext(TlsContext&) = delete;
+    TlsContext(TlsContext&&) = delete;
+
     int init();
 
     entropy_context entropy;
@@ -21,11 +25,15 @@ struct TlsContext {
 
 class TlsConnection {
 public:
-    TlsConnection(TlsContext &ctx) : ctx(ctx) {}
-    int init();
-    int handshake();
+    TlsConnection() = default;
+    TlsConnection(TlsConnection&) = delete;
+    TlsConnection(TlsConnection&&) = delete;
+
+    void setVerify(bool verify = true);
+    int init(TlsContext &ctx);
+    std::pair<int, int> handshake();
     // raw TLS data
-    int input(const uint8_t *data, size_t len);
+    std::pair<int, int> input(const uint8_t *data, size_t len);
     // application data
     int write(const uint8_t *data, size_t len);
     void cancel();
@@ -44,10 +52,10 @@ private:
     static int recv(void *ptr, unsigned char *buf, size_t len);
     static int send(void *ptr, const unsigned char *buf, size_t len);
     std::deque<uint8_t> input_buf;
-    TlsContext &ctx;
     ssl_context ssl;
     State state = State::Handshake;
     uint8_t read_buf[65536];
+    bool verify = false;
 };
 
 }

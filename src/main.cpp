@@ -71,13 +71,14 @@ int main(int argc, char **argv)
     for (auto n : config["servers"]) {
         string name = n["nick"].IsDefined()? n["nick"].as<string>() : "Opal";
         string addr = n["address"].as<string>();
-        string port = n["port"].IsDefined()? n["port"].as<string>() : "6667";
+        bool    tls = n["tls"].IsDefined()? n["tls"].as<bool>() : false;
+        string port = n["port"].IsDefined()? n["port"].as<string>() : (tls? "6697" : "6667");
         vector<string> chans;
         for (auto c : n["channels"]) {
             chans.emplace_back(c.as<string>());
         }
         servers.emplace_back(new IrcServer(addr, name, name, name, move(chans), bus));
-        servers.back()->start(addr.c_str(), port.c_str(), &loop);
+        servers.back()->start(&loop, addr.c_str(), port.c_str(), tls);
     }
 
     uv_run(&loop, UV_RUN_DEFAULT);

@@ -8,19 +8,20 @@ TEST(Tls, BasicClient)
 {
     TlsContext ctx;
     ctx.init();
-    TlsConnection tls(ctx);
-    ASSERT_EQ(tls.init(), 0);
+    TlsConnection tls;
+    ASSERT_EQ(tls.init(ctx), 0);
     DnsResolver dns;
     TcpConnection tcp;
     uv_loop_t loop;
     uv_loop_init(&loop);
     tcp.start(&loop, dns.addr_promise);
-    dns.start("httpbin.org", "https", &loop);
+    dns.start("google.com", "https", &loop);
     dns.addr_promise.then([&](struct sockaddr*) {
             tls.handshake();
         });
     tcp.read_promise.then([&](uv_buf_t buf) {
-            int ret = tls.input(reinterpret_cast<const uint8_t*>(buf.base), buf.len);
+            auto p = tls.input(reinterpret_cast<const uint8_t*>(buf.base), buf.len);
+            int ret = p.first;
             if (ret != 0 && ret != POLARSSL_ERR_NET_WANT_READ && ret != POLARSSL_ERR_NET_WANT_WRITE) {
                 char buf[1024];
                 polarssl_strerror(ret, buf, 1024);

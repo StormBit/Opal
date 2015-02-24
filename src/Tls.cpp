@@ -9,11 +9,16 @@ int TlsContext::init()
     entropy_init(&entropy);
     x509_crt_parse_path(&cacert, "/etc/ssl/certs"); // ??? why the fuck do I have to hardcode this?
     int ret;
-    static const unsigned char pers[] = "Opal IRC";
+    static const unsigned char pers[] = "Opal IRC Bot";
     if ((ret = ctr_drbg_init(&ctr_drbg, entropy_func, &entropy, pers, sizeof(pers))) != 0) {
         return ret;
     }
     return 0;
+}
+
+void TlsConnection::setVerify(bool verify)
+{
+    this->verify = verify;
 }
 
 static void my_debug(void *ctx, int level, const char *str)
@@ -22,11 +27,11 @@ static void my_debug(void *ctx, int level, const char *str)
     fprintf(stderr, "mbed-tls %i: %s", level, str);
 }
 
-int TlsConnection::init()
+int TlsConnection::init(TlsContext &ctx)
 {
     memset(&ssl, 0, sizeof(ssl_context));
-    int ret = ssl_init(&ssl);
-    if (ret != 0) {
+    int ret;
+    if ((ret = ssl_init(&ssl)) != 0) {
         return ret;
     }
     ssl_set_endpoint(&ssl, SSL_IS_CLIENT);
@@ -42,39 +47,41 @@ int TlsConnection::init()
     return 0;
 }
 
-int TlsConnection::handshake()
+pair<int, int> TlsConnection::handshake()
 {
     int ret;
     switch (state) {
     case State::Handshake:
         if ((ret = ssl_handshake(&ssl)) != 0) {
-            return ret;
+            return make_pair(ret, 0);
         }
         state = State::Verify;
         [[clang::fallthrough]];
     case State::Verify:
-        if ((ret = ssl_get_verify_result(&ssl)) != 0) {
-            return ret;
+        if (verify && (ret = ssl_get_verify_result(&ssl)) != 0) {
+            return make_pair(-1, ret);
         }
         state = State::Data;
         connected_promise.run();
         [[clang::fallthrough]];
     case State::Data:
-        switch ((ret = ssl_read(&ssl, read_buf, sizeof(read_buf)))) {
-        case POLARSSL_ERR_NET_WANT_READ:
-        case POLARSSL_ERR_NET_WANT_WRITE:
-            return ret;
-        default:
-            if (ret < 0) {
-                return ret;
+        do {
+            switch ((ret = ssl_read(&ssl, read_buf, sizeof(read_buf)))) {
+            case POLARSSL_ERR_NET_WANT_READ:
+            case POLARSSL_ERR_NET_WANT_WRITE:
+                return make_pair(ret, 0);
+            default:
+                if (ret < 0) {
+                    return make_pair(ret, 0);
+                }
             }
-        }
-        read_promise.run(make_pair(read_buf, ret));
-        return 0;
+            read_promise.run(make_pair(read_buf, ret));
+        } while (true);
+        return make_pair(0,0);
     }
 }
 
-int TlsConnection::input(const uint8_t *data, size_t len)
+pair<int, int> TlsConnection::input(const uint8_t *data, size_t len)
 {
     for (unsigned i = 0; i < len; i++) {
         input_buf.push_back(data[i]);

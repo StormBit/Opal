@@ -5,21 +5,23 @@
 using namespace std;
 using namespace bot;
 
-int IrcServer::start(const char *host, const char *service, uv_loop_t *loop)
+Connection::Error IrcServer::start(uv_loop_t *loop, const char *host, const char *service, bool use_tls)
 {
-    tcp.connected_promise.then([=](uv_tcp_t*) {
-            tcp.writef("NICK :%s\r\n", nickname.c_str());
-            tcp.writef("USER %s 0 0 :%s\r\n", user.c_str(), realname.c_str());
+    con.connected_promise.then([=]() {
+            con.writef("NICK :%s\r\n", nickname.c_str());
+            con.writef("USER %s 0 0 :%s\r\n", user.c_str(), realname.c_str());
         });
-    tcp.read_promise.then([=](uv_buf_t buf) {
+    con.read_promise.then([=](uv_buf_t buf) {
             parser.push(string(buf.base, buf.len));
             IrcMessage msg;
             while (parser.run(msg)) {
                 handleMessage(msg);
             }
         });
-    tcp.start(loop, dns.addr_promise);
-    return dns.start(host, service, loop);
+    con.error_promise.then([=](Connection::Error err) {
+            printf("%s: %s\n", host, err.to_string().c_str());
+        });
+    return con.start(loop, host, service, use_tls);
 }
 
 void IrcServer::handleMessage(const IrcMessage &msg)
@@ -28,7 +30,7 @@ void IrcServer::handleMessage(const IrcMessage &msg)
     if (msg.command == "001") {
         bus.fire("server-connect", Value(static_cast<IObject&>(*this)));
         for (auto &c : channels_to_join) {
-            tcp.writef("JOIN :%s\r\n", c.c_str());
+            con.writef("JOIN :%s\r\n", c.c_str());
         }
         return;
     }
@@ -38,7 +40,7 @@ void IrcServer::handleMessage(const IrcMessage &msg)
             v += msg.params[i] + " ";
         }
         v.pop_back();
-        tcp.writef("PONG :%s\r\n", v.c_str());
+        con.writef("PONG :%s\r\n", v.c_str());
         return;
     }
     if (msg.command == "JOIN") {
@@ -89,7 +91,7 @@ void IrcServer::handleCommand(const string &nick, const string &chan, const stri
         });
     bus.fire("command", std::move(table));
     if (cmd == "echo") {
-        tcp.writef("PRIVMSG %s :%s\r\n", chan.c_str(), args.c_str());
+        con.writef("PRIVMSG %s :%s\r\n", chan.c_str(), args.c_str());
         return;
     }
 }
@@ -133,6 +135,6 @@ int IrcServer::lua_write(lua_State *L)
     if (len > strlen(str)) {
         luaL_error(L, "IRC messages cannot contain embedded zeros");
     }
-    self.tcp.write(str);
+    self.con.write(str);
     return 0;
 }
