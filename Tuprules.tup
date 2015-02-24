@@ -43,7 +43,7 @@ endif
 
 CFLAGS = -std=c99 @(CFLAGS)
 
-LDFLAGS = -g -pthread -luv -lyaml-cpp `pkg-config --libs lua` -lhttp_parser -lsqlite3 @(LDFLAGS)
+LDFLAGS = -g -pthread -luv -lyaml-cpp `pkg-config --libs lua` -lhttp_parser -lsqlite3 -lmbedtls @(LDFLAGS)
 
 !cxx = |> ^o C++ %f^ $(CXX) $(CXXFLAGS) $(CCFLAGS) -c %f -o %o |> %B.o | $(TOP)/<objs>
 !cc = |> ^o C %f^ $(CC) $(CFLAGS) $(CCFLAGS) -c %f -o %o |> %B.o | $(TOP)/<objs>
