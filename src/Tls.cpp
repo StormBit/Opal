@@ -1,9 +1,9 @@
-#include "Ssl.h"
+#include "Tls.h"
 
 using namespace std;
 using namespace bot;
 
-int SslContext::init()
+int TlsContext::init()
 {
     x509_crt_init(&cacert);
     entropy_init(&entropy);
@@ -22,7 +22,7 @@ static void my_debug(void *ctx, int level, const char *str)
     fprintf(stderr, "mbed-tls %i: %s", level, str);
 }
 
-int SslConnection::init()
+int TlsConnection::init()
 {
     memset(&ssl, 0, sizeof(ssl_context));
     int ret = ssl_init(&ssl);
@@ -37,12 +37,12 @@ int SslConnection::init()
     ssl_set_rng(&ssl, ctr_drbg_random, &ctx.ctr_drbg);
     ssl_set_dbg(&ssl, my_debug, NULL);
     ssl_set_bio(&ssl,
-                &SslConnection::recv, this,
-                &SslConnection::send, this);
+                &TlsConnection::recv, this,
+                &TlsConnection::send, this);
     return 0;
 }
 
-int SslConnection::handshake()
+int TlsConnection::handshake()
 {
     int ret;
     switch (state) {
@@ -74,7 +74,7 @@ int SslConnection::handshake()
     }
 }
 
-int SslConnection::input(const uint8_t *data, size_t len)
+int TlsConnection::input(const uint8_t *data, size_t len)
 {
     for (unsigned i = 0; i < len; i++) {
         input_buf.push_back(data[i]);
@@ -82,19 +82,19 @@ int SslConnection::input(const uint8_t *data, size_t len)
     return handshake();
 }
 
-int SslConnection::write(const uint8_t *data, size_t len)
+int TlsConnection::write(const uint8_t *data, size_t len)
 {
     return ssl_write(&ssl, data, len);
 }
 
-void SslConnection::cancel()
+void TlsConnection::cancel()
 {
     ssl_close_notify(&ssl);
 }
 
-int SslConnection::recv(void *ptr, unsigned char *buf, size_t len)
+int TlsConnection::recv(void *ptr, unsigned char *buf, size_t len)
 {
-    SslConnection &self = *reinterpret_cast<SslConnection*>(ptr);
+    TlsConnection &self = *reinterpret_cast<TlsConnection*>(ptr);
     if (self.input_buf.empty()) {
         return POLARSSL_ERR_NET_WANT_READ;
     }
@@ -106,9 +106,9 @@ int SslConnection::recv(void *ptr, unsigned char *buf, size_t len)
     return size;
 }
 
-int SslConnection::send(void *ptr, const unsigned char *buf, size_t len)
+int TlsConnection::send(void *ptr, const unsigned char *buf, size_t len)
 {
-    SslConnection &self = *reinterpret_cast<SslConnection*>(ptr);
+    TlsConnection &self = *reinterpret_cast<TlsConnection*>(ptr);
     self.output_promise.run(make_pair(buf, len));
     return len;
 }

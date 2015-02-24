@@ -11,7 +11,7 @@
 
 namespace bot {
 
-struct SslContext {
+struct TlsContext {
     int init();
 
     entropy_context entropy;
@@ -19,9 +19,9 @@ struct SslContext {
     ctr_drbg_context ctr_drbg;
 };
 
-class SslConnection {
+class TlsConnection {
 public:
-    SslConnection(SslContext &ctx) : ctx(ctx) {}
+    TlsConnection(TlsContext &ctx) : ctx(ctx) {}
     int init();
     int handshake();
     // raw TLS data
@@ -44,7 +44,7 @@ private:
     static int recv(void *ptr, unsigned char *buf, size_t len);
     static int send(void *ptr, const unsigned char *buf, size_t len);
     std::deque<uint8_t> input_buf;
-    SslContext &ctx;
+    TlsContext &ctx;
     ssl_context ssl;
     State state = State::Handshake;
     uint8_t read_buf[65536];
