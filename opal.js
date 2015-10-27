@@ -18,7 +18,7 @@ function autoReload(name) {
             modules[name] = mod;
             console.log('Reloaded '+name);
         } catch(e) {
-            console.log('While reloading '+name+': '+e);
+            console.log('While reloading '+name+': '+e.stack);
         }
     });
 }
@@ -42,6 +42,7 @@ client.addListener('message', function(from, to, message) {
     let d = domain.create();
     d.on('error', function(er) {
         client.notice(target(from, to), er);
+        console.log(er.stack);
     });
     d.run(modules.link.onMessage, from, to, message, function(m) {
         client.notice(target(from, to), m);
