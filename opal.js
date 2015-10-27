@@ -1,33 +1,9 @@
 "use strict";
 
-// node
-const fs = require('fs');
-const domain = require('domain');
-// npm
 const irc = require('irc');
+const Module = require('./module');
 
-let modules = [];
-
-function autoReload(name) {
-    modules[name] = require('./'+name);
-    let path = require.resolve('./'+name);
-    fs.watchFile(path, function() {
-        delete require.cache[path];
-        try {
-            let mod = require('./'+name);
-            modules[name] = mod;
-            console.log('Reloaded '+name);
-        } catch(e) {
-            console.log('While reloading '+name+': '+e.stack);
-        }
-    });
-}
-
-autoReload('link');
-
-let client = new irc.Client('irc.stormbit.net', 'Opal', {
-    channels: ['#test']
-});
+let link = new Module('link');
 
 function target(from, to) {
     if (to === 'Opal') {
@@ -37,14 +13,20 @@ function target(from, to) {
     }
 }
 
+let client = new irc.Client('irc.stormbit.net', 'Opal', {
+    channels: ['#test']
+});
+
 client.addListener('message', function(from, to, message) {
     console.log('[' + to + '] <' + from + '> ' + message);
-    let d = domain.create();
-    d.on('error', function(er) {
+    if (message.startsWith('+reload link')) {
+        link.reload();
+        client.notice(target(from, to), 'Reloading link');
+    }
+    link.call('onMessage', [from, to, message]).then((m) => {
+        client.notice(target(from, to), m);
+    }).catch((e) => {
         client.notice(target(from, to), er);
         console.log(er.stack);
-    });
-    d.run(modules.link.onMessage, from, to, message, function(m) {
-        client.notice(target(from, to), m);
     });
 });

@@ -25,7 +25,7 @@ function followLink(addr, cb, hops, timer, connections) {
     }
     let req = https.get(addr, function(res) {
         if (res.statusCode === 301 || res.statusCode === 302) {
-            cb(followLink(url.resolve(addr, res.headers.location), cb, hops+1, timer, connections));
+            followLink(url.resolve(addr, res.headers.location), cb, hops+1, timer, connections);
             return;
         }
         if (res.statusCode !== 200) {
@@ -85,12 +85,14 @@ function followLink(addr, cb, hops, timer, connections) {
 }
 
 let link_regex = /(http[s]?:\/\/[^\s]+)/g;
-exports.onMessage = function(from, to, message, cb) {
+exports.onMessage = function(from, to, message) {
     let result = message.match(link_regex);
     if (!result) {
         return;
     }
     for (let addr of result) {
-        followLink(addr, cb);
+        return new Promise((resolve, reject) => {
+            followLink(addr, resolve);
+        });
     }
 }
