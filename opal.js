@@ -109,7 +109,7 @@ client.addListener('message', function(from, to, message) {
     }
     for (let url of result) {
         followLink(url, function(m) {
-            client.say(target(from, to), m);
+            client.notice(target(from, to), m);
         });
     }
 });
