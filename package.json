@@ -1,0 +1,18 @@
+{
+  "name": "opal-irc",
+  "version": "0.0.0",
+  "description": "An IRC bot",
+  "homepage": "https://github.com/StormBit/Opal",
+  "license": "MIT",
+  "author": "Tiffany Bennett <tiffany@stormbit.net> (https://tiffnix.com)",
+  "main": "opal",
+  "bin": "./opal.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/StormBit/Opal.git"
+  },
+  "dependencies": {
+    "htmlparser2": "^3.8.3",
+    "irc": "^0.4.0"
+  }
+}
