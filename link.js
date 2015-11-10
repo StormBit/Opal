@@ -3,6 +3,7 @@
 import https from 'https';
 import url from 'url';
 import htmlparser from 'htmlparser2';
+import * as api from './api';
 
 function followLink(addr, cb, hops = 0, connections = [], timer) {
   const host = url.parse(addr).host;
@@ -79,16 +80,8 @@ function followLink(addr, cb, hops = 0, connections = [], timer) {
   connections.push(req);
 }
 
-let link_regex = /(http[s]?:\/\/[^\s]+)/g;
-export function onMessage(from, to, message) {
-  const result = message.match(link_regex);
-  if (!result) {
-    return;
-  }
-
-  for (let addr of result) {
-    return new Promise((resolve, reject) => {
-      followLink(addr, resolve);
-    });
-  }
-}
+api.addRegex('(http[s]?:\/\/[^\s]+)', 'g', (from, to, addr) => {
+  return new Promise((resolve, reject) => {
+    followLink(addr, resolve);
+  });
+});
