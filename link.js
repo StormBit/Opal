@@ -1,12 +1,14 @@
 "use strict";
 
+import http from 'http';
 import https from 'https';
 import url from 'url';
 import htmlparser from 'htmlparser2';
 import * as api from './api';
 
 function followLink(addr, cb, hops = 0, connections = [], timer) {
-  const host = url.parse(addr).host;
+  addr = url.parse(addr);
+  const host = addr.host;
   if (!timer) {
     const delay = 15000; // 15 seconds
     timer = setTimeout(function() {
@@ -22,7 +24,15 @@ function followLink(addr, cb, hops = 0, connections = [], timer) {
     return;
   }
 
-  const req = https.get(addr, function(res) {
+  let proto;
+  if (addr.protocol == 'http:') {
+    proto = http;
+  }
+  if (addr.protocol == 'https:') {
+    proto = https;
+  }
+
+  const req = proto.get(addr, function(res) {
     if (res.statusCode === 301 || res.statusCode === 302) {
       followLink(url.resolve(addr, res.headers.location), cb, hops+1, connections, timer);
       return;
