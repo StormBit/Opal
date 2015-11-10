@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "htmlparser2": "^3.8.3",
-    "irc": "^0.4.0"
+    "irc": "^0.4.0",
+    "sqlite3": "^3.1.0"
   }
 }

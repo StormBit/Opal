@@ -3,41 +3,76 @@
 import irc from 'irc';
 import Module from './Module';
 import config from './config';
+import {target} from './util';
 
-const modules = new Map();
+class Opal {
+  constructor() {
+    this.modules = new Map();
+    this.servers = new Map();
+  }
 
-function target(from, to) {
-  if (to === 'Opal') {
-    return from;
-  } else {
-    return to;
+  load(name) {
+    this.modules.set(name, new Module(name, this));
+  }
+
+  unload(name) {
+    const mod = this.modules.get(name);
+    mod.stop();
+    this.modules.delete(name);
+  }
+
+  emit(event, server, channel, ...args) {
+    let any = false;
+    for (const mod of this.modules.values()) {
+      const res = mod.emit(event, server, channel, ...args);
+      any = any || res;
+    }
+    return any;
+  }
+
+  command(server, channel, cmd, args) {
+    let found = false;
+    for (const mod of this.modules.values()) {
+      const entry = mod.commands.get(cmd);
+      if (entry) {
+        mod.callback(entry.func, args)
+          .then((m) => notice(server, channel, m))
+          .catch((e) => notice(server, channel, e));
+        found = true;
+      }
+    }
+    return found;
+  }
+
+  notice(server, channel, message) {
+    this.servers.get(server).notice(channel, message);
   }
 }
 
-function load(name) {
-  const mod = new Module(name);
-  modules.set(name, mod);
-}
+const bot = new Opal();
 
 for (const name of config.modules) {
-  load(name);
+  bot.load(name);
 }
 
 for (const net of config.networks) {
   const prefix = net.prefix || '+';
   const nick = net.nick || 'Opal';
+  const server = net.host;
 
   console.log(`Connecting to ${net.host}`);
 
-  const client = new irc.Client(net.host, nick, {
+  const client = new irc.Client(server, nick, {
     channels: net.channels
   });
+  bot.servers.set(server, client);
 
   client.addListener('message', function(from, to, message) {
     console.log(`[${to}] <${from}> ${message}`);
+    const targ = target(from, to);
 
     const notice = (msg) => {
-      client.notice(target(from, to), msg);
+      client.notice(targ, msg);
     }
     const callback = (mod, func, args) => {
       mod.callback(func, args)
@@ -58,7 +93,7 @@ for (const net of config.networks) {
 
       if (command === 'reload') {
         const name = args[0];
-        const mod = modules.get(name);
+        const mod = bot.modules.get(name);
         if (mod) {
           mod.reload();
           notice(`Reloaded "${name}"`);
@@ -74,30 +109,22 @@ for (const net of config.networks) {
       }
       if (command === 'unload') {
         const name = args[0];
-        const mod = modules.get(name);
+        const mod = bot.modules.get(name);
         if (mod) {
-          mod.stop();
-          modules.delete(name);
+          unload(name);
           notice(`Unloaded "${name}"`);
         } else {
           notice(`No such module "${name}"`);
         }
       }
-      let found = false;
-      for (const mod of modules.values()) {
-        const entry = mod.commands.get(command);
-        if (entry) {
-          callback(mod, entry.func, [from, to, args]);
-          found = true;
-        }
-      }
-      if (!found) {
+
+      if (!bot.command(server, targ, command, [from, to, args])) {
         notice(`No such command "${command}"`);
       }
       return;
     }
 
-    for (const mod of modules.values()) {
+    for (const mod of bot.modules.values()) {
       for (const entry of mod.regexes) {
         const result = message.match(entry.regex);
         if (!result) {
@@ -108,5 +135,7 @@ for (const net of config.networks) {
         }
       }
     }
+
+    bot.emit('activity', server, to, from, to);
   });
 }

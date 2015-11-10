@@ -5,8 +5,9 @@ import { fork } from 'child_process';
 import fs from 'fs';
 
 export default class Module {
-  constructor(name) {
+  constructor(name, bot) {
     this.name = name;
+    this.bot = bot;
     this.start();
     fs.watchFile(require.resolve(`./${name}`), () => this.reload());
   }
@@ -28,11 +29,27 @@ export default class Module {
     console.log(`Starting ${this.name}`);
     this.commands = new Map();
     this.regexes = [];
+    this.listening = new Map();
     this.promises = new Map();
     this.next_id = 0;
     this.process = fork(require.resolve(`./${this.name}`));
 
     this.process.on('message', (msg) => {
+      if (msg.type === 'notice') {
+        this.bot.notice(msg.server, msg.channel, msg.message);
+      }
+      if (msg.type === 'addListener') {
+        let refs = this.listening.get(msg.event) || 0;
+        this.listening.set(msg.event, refs + 1);
+      }
+      if (msg.type === 'removeListener') {
+        let refs = this.listening.get(msg.event) || 0;
+        if (refs <= 1) {
+          this.listening.delete(msg.event);
+        } else {
+          this.listening.set(msg.event, refs - 1);
+        }
+      }
       if (msg.type === 'addCommand') {
         this.commands.set(msg.name, {
           func: msg.func
@@ -67,5 +84,20 @@ export default class Module {
         args
       });
     });
+  }
+
+  emit(event, server, channel, ...args) {
+    const refs = this.listening.get(event);
+    if (refs === undefined || refs < 1) {
+      return false;
+    }
+    this.process.send({
+      type: 'emit',
+      event,
+      server,
+      channel,
+      args
+    });
+    return true;
   }
 }

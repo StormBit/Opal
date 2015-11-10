@@ -2,7 +2,8 @@
 
 export default {
   modules: [
-    'link'
+    'link',
+    'note'
   ],
   networks: [
     {
