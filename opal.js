@@ -125,6 +125,8 @@ for (const net of config.networks) {
       const entry = commands.get(command);
       if (entry) {
         wrapped_callback(entry.mod, entry.func, [from, to, args]);
+      } else {
+        client.notice(target(from, to), `No such command "${command}"`);
       }
       return;
     }
